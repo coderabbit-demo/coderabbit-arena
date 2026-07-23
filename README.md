@@ -21,14 +21,16 @@ npm test         # run the test suite
 
 ## API
 
-| Method | Path             | Description                                  |
-| ------ | ---------------- | -------------------------------------------- |
-| GET    | `/health`        | Liveness check                               |
-| POST   | `/resources`     | Create a bookable resource                   |
-| GET    | `/resources`     | List resources                               |
-| POST   | `/bookings`      | Create a booking (rejects conflicts)         |
-| GET    | `/bookings`      | List bookings (`?resourceId=` to filter)     |
-| DELETE | `/bookings/:id`  | Cancel a booking                             |
+| Method | Path                            | Description                                  |
+| ------ | ------------------------------- | -------------------------------------------- |
+| GET    | `/health`                       | Liveness check                               |
+| POST   | `/resources`                    | Create a bookable resource                   |
+| GET    | `/resources`                    | List resources                               |
+| GET    | `/resources/:id/availability`   | Free slots (`?start=&end=&slotMinutes=`)     |
+| POST   | `/bookings`                     | Create a booking (rejects conflicts)         |
+| GET    | `/bookings`                     | List bookings (`?resourceId=` to filter)     |
+| PATCH  | `/bookings/:id`                 | Reschedule a booking                         |
+| DELETE | `/bookings/:id`                 | Cancel a booking                             |
 
 ### Example
 

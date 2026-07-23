@@ -30,9 +30,29 @@ export function createApp(service: BookingService) {
     res.json(service.listBookings(resourceId));
   });
 
+  app.patch("/bookings/:id", (req, res) => {
+    const body = req.body ?? {};
+    const booking = service.rescheduleBooking(req.params.id, {
+      start: body.start,
+      end: body.end,
+    });
+    res.json(booking);
+  });
+
   app.delete("/bookings/:id", (req, res) => {
     const booking = service.cancelBooking(req.params.id);
     res.json(booking);
+  });
+
+  app.get("/resources/:id/availability", (req, res) => {
+    const slotMinutes = Number(req.query.slotMinutes ?? 60);
+    const slots = service.getAvailability({
+      resourceId: req.params.id,
+      start: String(req.query.start),
+      end: String(req.query.end),
+      slotMinutes,
+    });
+    res.json({ resourceId: req.params.id, slotMinutes, slots });
   });
 
   app.use(errorHandler);
