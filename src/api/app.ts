@@ -1,6 +1,7 @@
 import express, { NextFunction, Request, Response } from "express";
 import { BookingService, ConflictError, NotFoundError } from "../services/bookingService";
 import { ValidationError } from "../domain/time";
+import { ReportError } from "../reports/types";
 
 export function createApp(service: BookingService) {
   const app = express();
@@ -35,6 +36,16 @@ export function createApp(service: BookingService) {
     res.json(booking);
   });
 
+  app.get("/reports/utilization", (req, res) => {
+    const from = typeof req.query.from === "string" ? req.query.from : "";
+    const to = typeof req.query.to === "string" ? req.query.to : "";
+    const report = service.utilizationReport({
+      window: { from, to },
+      rules: req.body?.rules,
+    });
+    res.json(report);
+  });
+
   app.use(errorHandler);
 
   return app;
@@ -46,7 +57,7 @@ function errorHandler(
   res: Response,
   _next: NextFunction,
 ) {
-  if (err instanceof ValidationError) {
+  if (err instanceof ValidationError || err instanceof ReportError) {
     return res.status(400).json({ error: err.message });
   }
   if (err instanceof NotFoundError) {

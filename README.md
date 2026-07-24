@@ -29,6 +29,7 @@ npm test         # run the test suite
 | POST   | `/bookings`      | Create a booking (rejects conflicts)         |
 | GET    | `/bookings`      | List bookings (`?resourceId=` to filter)     |
 | DELETE | `/bookings/:id`  | Cancel a booking                             |
+| GET    | `/reports/utilization` | Utilization report (`?from=&to=`)      |
 
 ### Example
 
@@ -42,6 +43,17 @@ curl -X POST localhost:3000/resources \
 curl -X POST localhost:3000/bookings \
   -H 'content-type: application/json' \
   -d '{"resourceId":"<id>","bookedBy":"Ada","start":"2026-08-01T09:00:00Z","end":"2026-08-01T10:00:00Z"}'
+```
+
+### Utilization reports
+
+`GET /reports/utilization?from=<iso>&to=<iso>` summarizes how heavily each
+resource is booked over a window. Bookings are clipped to the window and capped
+at the resource's capacity, so utilization stays in `0..1`. Passing pricing
+`rules` in the request body also estimates revenue per resource.
+
+```bash
+curl -s 'localhost:3000/reports/utilization?from=2026-08-05T00:00:00Z&to=2026-08-06T00:00:00Z'
 ```
 
 ## Design notes

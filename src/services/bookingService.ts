@@ -7,6 +7,8 @@ import {
   CreateResourceInput,
   Resource,
 } from "../domain/types";
+import { buildUtilizationReport } from "../reports/reports";
+import { ReportInput, UtilizationReport } from "../reports/types";
 
 export class NotFoundError extends Error {
   constructor(message: string) {
@@ -100,5 +102,18 @@ export class BookingService {
       return this.store.bookingsForResource(resourceId);
     }
     return this.store.listBookings();
+  }
+
+  /**
+   * Build a utilization report across all resources for a time window,
+   * optionally estimating revenue from pricing rules. Only confirmed bookings
+   * count toward utilization.
+   */
+  utilizationReport(input: ReportInput): UtilizationReport {
+    return buildUtilizationReport(
+      this.store.listResources(),
+      (resourceId) => this.store.bookingsForResource(resourceId, true),
+      input,
+    );
   }
 }
