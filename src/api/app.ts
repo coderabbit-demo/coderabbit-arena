@@ -2,6 +2,8 @@ import express, { NextFunction, Request, Response } from "express";
 import { BookingService, ConflictError, NotFoundError } from "../services/bookingService";
 import { ValidationError } from "../domain/time";
 import { ReportError } from "../reports/types";
+import { reportToCsv } from "../reports/csv";
+import { reportToMarkdown } from "../reports/markdown";
 
 export function createApp(service: BookingService) {
   const app = express();
@@ -43,6 +45,15 @@ export function createApp(service: BookingService) {
       window: { from, to },
       rules: req.body?.rules,
     });
+
+    if (req.query.format === "csv") {
+      res.type("text/csv").send(reportToCsv(report));
+      return;
+    }
+    if (req.query.format === "md") {
+      res.type("text/markdown").send(reportToMarkdown(report));
+      return;
+    }
     res.json(report);
   });
 
