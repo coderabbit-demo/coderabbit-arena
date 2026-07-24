@@ -12,9 +12,16 @@ const HEADERS = [
   "Revenue",
 ] as const;
 
-/** Escape the pipe and backslash characters that would break a table cell. */
+/**
+ * Escape the pipe and backslash characters that would break a table cell.
+ * CR/LF line breaks are normalized to a space first so a multi-line value
+ * still renders as a single Markdown table row.
+ */
 function escapeCell(value: string): string {
-  return value.replace(/\\/g, "\\\\").replace(/\|/g, "\\|");
+  return value
+    .replace(/\r\n|\r|\n/g, " ")
+    .replace(/\\/g, "\\\\")
+    .replace(/\|/g, "\\|");
 }
 
 function toRow(cells: readonly string[]): string {

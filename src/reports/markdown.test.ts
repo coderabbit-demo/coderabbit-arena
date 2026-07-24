@@ -96,4 +96,23 @@ describe("reportToMarkdown", () => {
     const lines = reportToMarkdown(r).split("\n");
     expect(lines[4]).toContain("Room A \\| B");
   });
+
+  it("keeps a resource name containing a newline within a single table row", () => {
+    const r = report({
+      resources: [
+        {
+          resourceId: "a",
+          resourceName: "Room A\nAnnex",
+          bookingCount: 1,
+          bookedMinutes: 60,
+          capacityMinutes: 1440,
+          utilization: 0.04,
+          revenueCents: 6000,
+        },
+      ],
+    });
+    const lines = reportToMarkdown(r).split("\n");
+    expect(lines).toHaveLength(6);
+    expect(lines[4]).toBe("| Room A Annex | 1 | 60 | 1440 | 4% | $60.00 |");
+  });
 });
