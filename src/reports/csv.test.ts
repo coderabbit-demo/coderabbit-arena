@@ -105,6 +105,42 @@ describe("reportToCsv", () => {
     expect(lines[1]).toContain('"The ""Big"" Room"');
   });
 
+  it("prefixes formula-like fields with an apostrophe to prevent CSV injection", () => {
+    const r = report({
+      resources: [
+        {
+          resourceId: "a",
+          resourceName: "=SUM(A1:A9)",
+          bookingCount: 1,
+          bookedMinutes: 60,
+          capacityMinutes: 1440,
+          utilization: 0.04,
+          revenueCents: 6000,
+        },
+      ],
+    });
+    const lines = reportToCsv(r).split("\r\n");
+    expect(lines[1]).toBe("a,'=SUM(A1:A9),1,60,1440,4%,$60.00");
+  });
+
+  it("prefixes whitespace-led formula payloads with an apostrophe", () => {
+    const r = report({
+      resources: [
+        {
+          resourceId: "a",
+          resourceName: "  +cmd|' /C calc'!A0",
+          bookingCount: 1,
+          bookedMinutes: 60,
+          capacityMinutes: 1440,
+          utilization: 0.04,
+          revenueCents: 6000,
+        },
+      ],
+    });
+    const lines = reportToCsv(r).split("\r\n");
+    expect(lines[1]).toContain("'  +cmd");
+  });
+
   it("produces only a header and TOTAL row when there are no resources", () => {
     const r = report({
       resources: [],

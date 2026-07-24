@@ -16,12 +16,17 @@ const HEADERS = [
 /**
  * Escape a single CSV field per RFC 4180: wrap in double quotes when it
  * contains a comma, quote, or newline, and double any embedded quotes.
+ *
+ * Values that begin with =, +, -, or @ (after leading whitespace) are
+ * prefixed with an apostrophe to prevent formula injection when the CSV is
+ * opened in spreadsheet software.
  */
 function escapeField(value: string): string {
-  if (/[",\n\r]/.test(value)) {
-    return `"${value.replace(/"/g, '""')}"`;
+  const safeValue = /^\s*[=+\-@]/.test(value) ? `'${value}` : value;
+  if (/[",\n\r]/.test(safeValue)) {
+    return `"${safeValue.replace(/"/g, '""')}"`;
   }
-  return value;
+  return safeValue;
 }
 
 function toRow(fields: readonly string[]): string {
