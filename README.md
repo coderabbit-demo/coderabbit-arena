@@ -27,6 +27,7 @@ npm test         # run the test suite
 | POST   | `/resources`     | Create a bookable resource                   |
 | GET    | `/resources`     | List resources                               |
 | POST   | `/bookings`      | Create a booking (rejects conflicts)         |
+| POST   | `/bookings/recurring` | Create a recurring booking series       |
 | GET    | `/bookings`      | List bookings (`?resourceId=` to filter)     |
 | DELETE | `/bookings/:id`  | Cancel a booking                             |
 | GET    | `/reports/utilization` | Utilization report (`?from=&to=`, `&format=csv\|md`) |
@@ -45,27 +46,28 @@ curl -X POST localhost:3000/bookings \
   -d '{"resourceId":"<id>","bookedBy":"Ada","start":"2026-08-01T09:00:00Z","end":"2026-08-01T10:00:00Z"}'
 ```
 
-### Utilization reports
+### Recurring bookings
 
-`GET /reports/utilization?from=<iso>&to=<iso>` summarizes how heavily each
-resource is booked over a window. Bookings are clipped to the window and capped
-at the resource's capacity, so utilization stays in `0..1`. Passing pricing
-`rules` in the request body also estimates revenue per resource.
+`POST /bookings/recurring` expands a recurrence rule into a series of bookings.
+Every occurrence is conflict-checked before anything is persisted, so a single
+clash rejects the whole series.
 
 ```bash
-curl -s 'localhost:3000/reports/utilization?from=2026-08-05T00:00:00Z&to=2026-08-06T00:00:00Z'
-
-# same report as a CSV download (one row per resource plus a TOTAL row)
-curl -s 'localhost:3000/reports/utilization?from=2026-08-05T00:00:00Z&to=2026-08-06T00:00:00Z&format=csv'
-
-# or as a Markdown table, ready to paste into a PR comment
-curl -s 'localhost:3000/reports/utilization?from=2026-08-05T00:00:00Z&to=2026-08-06T00:00:00Z&format=md'
+curl -X POST localhost:3000/bookings/recurring \
+  -H 'content-type: application/json' \
+  -d '{
+    "resourceId":"<id>","bookedBy":"Ada",
+    "start":"2026-08-03T09:00:00Z","end":"2026-08-03T10:00:00Z",
+    "rule":{"frequency":"weekly","interval":1,"count":4,"weekdays":[1,3,5]}
+  }'
 ```
 
 ## Design notes
 
 - Time intervals are **half-open** `[start, end)`, so back-to-back bookings
   (one ending exactly when the next starts) do not conflict.
+- Recurring series are **all-or-nothing**: every occurrence must be free, or the
+  whole request is rejected with a conflict.
 - Capacity controls how many concurrent confirmed bookings a resource allows.
 - The store is an in-memory `Map`; swap `InMemoryStore` for a DB-backed
   implementation without changing the service layer.

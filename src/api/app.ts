@@ -1,9 +1,7 @@
 import express, { NextFunction, Request, Response } from "express";
 import { BookingService, ConflictError, NotFoundError } from "../services/bookingService";
 import { ValidationError } from "../domain/time";
-import { ReportError } from "../reports/types";
-import { reportToCsv } from "../reports/csv";
-import { reportToMarkdown } from "../reports/markdown";
+import { RecurrenceError } from "../recurrence/types";
 
 export function createApp(service: BookingService) {
   const app = express();
@@ -25,6 +23,11 @@ export function createApp(service: BookingService) {
   app.post("/bookings", (req, res) => {
     const booking = service.createBooking(req.body ?? {});
     res.status(201).json(booking);
+  });
+
+  app.post("/bookings/recurring", (req, res) => {
+    const result = service.createRecurringBooking(req.body ?? {});
+    res.status(201).json(result);
   });
 
   app.get("/bookings", (req, res) => {
@@ -68,7 +71,7 @@ function errorHandler(
   res: Response,
   _next: NextFunction,
 ) {
-  if (err instanceof ValidationError || err instanceof ReportError) {
+  if (err instanceof ValidationError || err instanceof RecurrenceError) {
     return res.status(400).json({ error: err.message });
   }
   if (err instanceof NotFoundError) {
