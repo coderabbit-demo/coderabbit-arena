@@ -30,6 +30,7 @@ npm test         # run the test suite
 | POST   | `/bookings/recurring` | Create a recurring booking series       |
 | GET    | `/bookings`      | List bookings (`?resourceId=` to filter)     |
 | DELETE | `/bookings/:id`  | Cancel a booking                             |
+| GET    | `/reports/utilization` | Utilization report (`?from=&to=`, `&format=csv\|md`) |
 
 ### Example
 

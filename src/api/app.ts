@@ -41,6 +41,25 @@ export function createApp(service: BookingService) {
     res.json(booking);
   });
 
+  app.get("/reports/utilization", (req, res) => {
+    const from = typeof req.query.from === "string" ? req.query.from : "";
+    const to = typeof req.query.to === "string" ? req.query.to : "";
+    const report = service.utilizationReport({
+      window: { from, to },
+      rules: req.body?.rules,
+    });
+
+    if (req.query.format === "csv") {
+      res.type("text/csv").send(reportToCsv(report));
+      return;
+    }
+    if (req.query.format === "md") {
+      res.type("text/markdown").send(reportToMarkdown(report));
+      return;
+    }
+    res.json(report);
+  });
+
   app.use(errorHandler);
 
   return app;

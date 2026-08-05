@@ -10,7 +10,12 @@ export class PricingError extends Error {
   }
 }
 
-/** Saturday (6) and Sunday (0) are treated as weekend days. */
+/**
+ * Determines whether a weekday is a weekend day.
+ *
+ * @param day - The weekday, where Sunday is `0` and Saturday is `6`
+ * @returns `true` if `day` is Sunday or Saturday, `false` otherwise
+ */
 export function isWeekend(day: Weekday): boolean {
   return day === 0 || day === 6;
 }
@@ -20,6 +25,12 @@ export function isPeakHour(hour: number, rules: PricingRules): boolean {
   return hour >= rules.peakStartHour && hour < rules.peakEndHour;
 }
 
+/**
+ * Validates pricing rules and rejects invalid rates, multipliers, surcharges, or peak-hour bounds.
+ *
+ * @param rules - Pricing configuration to validate
+ * @throws `PricingError` if any pricing value or peak window is invalid
+ */
 function validateRules(rules: PricingRules): void {
   if (rules.hourlyRateCents < 0) {
     throw new PricingError("hourlyRateCents must not be negative");
@@ -40,9 +51,12 @@ function validateRules(rules: PricingRules): void {
 }
 
 /**
- * Split a booking into per-minute buckets and count how many minutes fall in
- * the peak window vs off-peak. Walking minute-by-minute keeps the peak
- * boundary exact even when a booking straddles it.
+ * Counts booking minutes that fall within the configured peak window and outside it.
+ *
+ * @param start - The booking start time
+ * @param end - The booking end time
+ * @param rules - Pricing configuration containing the peak-hour window
+ * @returns Counts of peak and off-peak minutes
  */
 function splitMinutes(
   start: Date,
@@ -65,14 +79,23 @@ function splitMinutes(
   return { peak, offPeak };
 }
 
+/**
+ * Converts a duration in minutes to its prorated cost in cents.
+ *
+ * @param minutes - The duration to price, in minutes
+ * @param hourlyRateCents - The hourly rate in cents
+ * @returns The prorated cost in cents
+ */
 function minutesToCents(minutes: number, hourlyRateCents: Cents): Cents {
   return (minutes / MINUTES_PER_HOUR) * hourlyRateCents;
 }
 
 /**
- * Produce a full price breakdown for a booking. The order of operations is:
- * per-minute peak/off-peak subtotal → weekend surcharge → discount →
- * minimum-charge floor. All returned amounts are rounded to whole cents.
+ * Calculates a booking price with peak-hour rates, weekend surcharges, discounts, and a minimum charge.
+ *
+ * @param input - The booking dates, pricing rules, and optional discount rate.
+ * @returns The duration and rounded price components in cents.
+ * @throws PricingError If the dates, pricing rules, or discount rate are invalid.
  */
 export function quote(input: QuoteInput): PriceBreakdown {
   const { start, end, rules } = input;
@@ -118,7 +141,13 @@ export function quote(input: QuoteInput): PriceBreakdown {
   };
 }
 
-/** Format a cents amount as a currency string, e.g. 1250 -> "$12.50". */
+/**
+ * Formats a cents amount as a currency string with two decimal places.
+ *
+ * @param cents - The amount in cents.
+ * @param symbol - The currency symbol to prepend.
+ * @returns The formatted currency amount.
+ */
 export function formatCents(cents: Cents, symbol = "$"): string {
   const sign = cents < 0 ? "-" : "";
   const abs = Math.abs(Math.round(cents));
