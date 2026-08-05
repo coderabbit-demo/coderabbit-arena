@@ -1,6 +1,7 @@
 import express, { NextFunction, Request, Response } from "express";
 import { BookingService, ConflictError, NotFoundError } from "../services/bookingService";
 import { ValidationError } from "../domain/time";
+import { RecurrenceError } from "../recurrence/types";
 
 export function createApp(service: BookingService) {
   const app = express();
@@ -24,6 +25,11 @@ export function createApp(service: BookingService) {
     res.status(201).json(booking);
   });
 
+  app.post("/bookings/recurring", (req, res) => {
+    const result = service.createRecurringBooking(req.body ?? {});
+    res.status(201).json(result);
+  });
+
   app.get("/bookings", (req, res) => {
     const resourceId =
       typeof req.query.resourceId === "string" ? req.query.resourceId : undefined;
@@ -33,6 +39,25 @@ export function createApp(service: BookingService) {
   app.delete("/bookings/:id", (req, res) => {
     const booking = service.cancelBooking(req.params.id);
     res.json(booking);
+  });
+
+  app.get("/reports/utilization", (req, res) => {
+    const from = typeof req.query.from === "string" ? req.query.from : "";
+    const to = typeof req.query.to === "string" ? req.query.to : "";
+    const report = service.utilizationReport({
+      window: { from, to },
+      rules: req.body?.rules,
+    });
+
+    if (req.query.format === "csv") {
+      res.type("text/csv").send(reportToCsv(report));
+      return;
+    }
+    if (req.query.format === "md") {
+      res.type("text/markdown").send(reportToMarkdown(report));
+      return;
+    }
+    res.json(report);
   });
 
   app.use(errorHandler);
@@ -46,7 +71,7 @@ function errorHandler(
   res: Response,
   _next: NextFunction,
 ) {
-  if (err instanceof ValidationError) {
+  if (err instanceof ValidationError || err instanceof RecurrenceError) {
     return res.status(400).json({ error: err.message });
   }
   if (err instanceof NotFoundError) {

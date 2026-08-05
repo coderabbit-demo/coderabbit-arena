@@ -20,6 +20,8 @@ export interface Booking {
   end: string;
   status: BookingStatus;
   createdAt: string;
+  /** Present when this booking is part of a recurring series. */
+  seriesId?: string;
 }
 
 export interface CreateResourceInput {
