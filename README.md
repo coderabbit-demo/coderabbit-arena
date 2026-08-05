@@ -29,7 +29,7 @@ npm test         # run the test suite
 | POST   | `/bookings`      | Create a booking (rejects conflicts)         |
 | GET    | `/bookings`      | List bookings (`?resourceId=` to filter)     |
 | DELETE | `/bookings/:id`  | Cancel a booking                             |
-| GET    | `/reports/utilization` | Utilization report (`?from=&to=`)      |
+| GET    | `/reports/utilization` | Utilization report (`?from=&to=`, `&format=csv\|md`) |
 
 ### Example
 
@@ -54,6 +54,12 @@ at the resource's capacity, so utilization stays in `0..1`. Passing pricing
 
 ```bash
 curl -s 'localhost:3000/reports/utilization?from=2026-08-05T00:00:00Z&to=2026-08-06T00:00:00Z'
+
+# same report as a CSV download (one row per resource plus a TOTAL row)
+curl -s 'localhost:3000/reports/utilization?from=2026-08-05T00:00:00Z&to=2026-08-06T00:00:00Z&format=csv'
+
+# or as a Markdown table, ready to paste into a PR comment
+curl -s 'localhost:3000/reports/utilization?from=2026-08-05T00:00:00Z&to=2026-08-06T00:00:00Z&format=md'
 ```
 
 ## Design notes
