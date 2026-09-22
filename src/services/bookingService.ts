@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { InMemoryStore } from "../store/store";
+import { BookingStore } from "../store/store";
 import { overlaps, parseRange, ValidationError } from "../domain/time";
 import {
   Booking,
@@ -9,7 +9,12 @@ import {
   TimeRange,
 } from "../domain/types";
 import { expand } from "../recurrence/recurrence";
-import { Occurrence, RecurrenceRule } from "../recurrence/types";
+import { RecurrenceRule } from "../recurrence/types";
+import { buildUtilizationReport } from "../reports/reports";
+import { ReportInput, UtilizationReport } from "../reports/types";
+import { EventBus } from "../events/bus";
+import { Actor, ForbiddenError } from "../auth/types";
+import { assertPermission, hasPermission } from "../auth/apiKeys";
 
 /** Input for creating a whole series of bookings from a recurrence rule. */
 export interface CreateRecurringBookingInput extends CreateBookingInput {
@@ -37,10 +42,20 @@ export class ConflictError extends Error {
   }
 }
 
+/**
+ * Core booking use-cases. Every mutation takes the acting API key so that
+ * ownership can be enforced and the resulting event is attributed correctly.
+ */
 export class BookingService {
-  constructor(private readonly store: InMemoryStore) {}
+  constructor(
+    private readonly store: BookingStore,
+    private readonly bus: EventBus = new EventBus(),
+    private readonly clock: () => Date = () => new Date(),
+  ) {}
 
-  createResource(input: CreateResourceInput): Resource {
+  createResource(input: CreateResourceInput, actor: Actor): Resource {
+    assertPermission(actor, "resources:write");
+
     const name = input.name?.trim();
     if (!name) {
       throw new ValidationError("Resource name is required");
@@ -50,18 +65,23 @@ export class BookingService {
       throw new ValidationError("Capacity must be a positive integer");
     }
 
-    return this.store.addResource({
+    const resource = this.store.addResource({
       id: randomUUID(),
       name,
       capacity,
+      createdBy: actor.keyId,
     });
+    this.bus.publish({ type: "resource.created", resource }, actor);
+    return resource;
   }
 
   listResources(): Resource[] {
     return this.store.listResources();
   }
 
-  createBooking(input: CreateBookingInput): Booking {
+  createBooking(input: CreateBookingInput, actor: Actor): Booking {
+    assertPermission(actor, "bookings:write");
+
     const bookedBy = input.bookedBy?.trim();
     if (!bookedBy) {
       throw new ValidationError("bookedBy is required");
@@ -75,8 +95,11 @@ export class BookingService {
     const range = parseRange(input.start, input.end);
     this.assertAvailable(resource, range);
 
-    const booking = this.buildBooking(resource, bookedBy, range);
-    return this.store.addBooking(booking);
+    const booking = this.store.addBooking(
+      this.buildBooking(resource, bookedBy, range, actor),
+    );
+    this.bus.publish({ type: "booking.created", booking }, actor);
+    return booking;
   }
 
   /**
@@ -86,7 +109,10 @@ export class BookingService {
    */
   createRecurringBooking(
     input: CreateRecurringBookingInput,
+    actor: Actor,
   ): RecurringBookingResult {
+    assertPermission(actor, "bookings:write");
+
     const bookedBy = input.bookedBy?.trim();
     if (!bookedBy) {
       throw new ValidationError("bookedBy is required");
@@ -111,23 +137,44 @@ export class BookingService {
 
     const seriesId = randomUUID();
     const bookings = occurrences.map((occ) => {
-      const booking = this.buildBooking(resource, bookedBy, occ);
+      const booking = this.buildBooking(resource, bookedBy, occ, actor);
       booking.seriesId = seriesId;
       return this.store.addBooking(booking);
     });
 
+    this.bus.publish({ type: "booking.series.created", seriesId, bookings }, actor);
     return { seriesId, bookings };
   }
 
-  cancelBooking(id: string): Booking {
+  /**
+   * Cancel a booking. Members may only cancel bookings created with their own
+   * key; admins (holders of `bookings:cancel:any`) may cancel anything.
+   */
+  cancelBooking(id: string, actor: Actor): Booking {
+    assertPermission(actor, "bookings:write");
+
     const booking = this.store.getBooking(id);
     if (!booking) {
       throw new NotFoundError(`Booking not found: ${id}`);
     }
+    if (
+      booking.createdBy !== actor.keyId &&
+      !hasPermission(actor.role, "bookings:cancel:any")
+    ) {
+      throw new ForbiddenError("Only the creator or an admin may cancel this booking");
+    }
     if (booking.status === "cancelled") {
       return booking;
     }
-    return this.store.updateBooking({ ...booking, status: "cancelled" });
+
+    const cancelled = this.store.updateBooking({
+      ...booking,
+      status: "cancelled",
+      cancelledAt: this.clock().toISOString(),
+      cancelledBy: actor.keyId,
+    });
+    this.bus.publish({ type: "booking.cancelled", booking: cancelled }, actor);
+    return cancelled;
   }
 
   listBookings(resourceId?: string): Booking[] {
@@ -135,6 +182,19 @@ export class BookingService {
       return this.store.bookingsForResource(resourceId);
     }
     return this.store.listBookings();
+  }
+
+  /**
+   * Build a utilization report across all resources for a time window,
+   * optionally estimating revenue from pricing rules. Only confirmed bookings
+   * count toward utilization.
+   */
+  utilizationReport(input: ReportInput): UtilizationReport {
+    return buildUtilizationReport(
+      this.store.listResources(),
+      (resourceId) => this.store.bookingsForResource(resourceId, true),
+      input,
+    );
   }
 
   /**
@@ -167,6 +227,7 @@ export class BookingService {
     resource: Resource,
     bookedBy: string,
     range: TimeRange,
+    actor: Actor,
   ): Booking {
     return {
       id: randomUUID(),
@@ -175,7 +236,8 @@ export class BookingService {
       start: range.start.toISOString(),
       end: range.end.toISOString(),
       status: "confirmed",
-      createdAt: new Date().toISOString(),
+      createdAt: this.clock().toISOString(),
+      createdBy: actor.keyId,
     };
   }
 }
