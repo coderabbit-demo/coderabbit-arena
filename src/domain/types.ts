@@ -4,6 +4,8 @@ export interface Resource {
   name: string;
   /** Maximum concurrent bookings this resource supports (usually 1). */
   capacity: number;
+  /** Id of the API key that created the resource. */
+  createdBy: string;
 }
 
 export type BookingStatus = "confirmed" | "cancelled";
@@ -20,6 +22,12 @@ export interface Booking {
   end: string;
   status: BookingStatus;
   createdAt: string;
+  /** Id of the API key that created the booking. */
+  createdBy: string;
+  /** Set when the booking was cancelled (ISO-8601). */
+  cancelledAt?: string;
+  /** Id of the API key that cancelled the booking. */
+  cancelledBy?: string;
   /** Present when this booking is part of a recurring series. */
   seriesId?: string;
 }

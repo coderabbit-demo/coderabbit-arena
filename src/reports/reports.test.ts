@@ -13,8 +13,8 @@ const rules: PricingRules = {
   minimumChargeCents: 0,
 };
 
-const roomA: Resource = { id: "a", name: "Room A", capacity: 1 };
-const roomB: Resource = { id: "b", name: "Room B", capacity: 2 };
+const roomA: Resource = { id: "a", name: "Room A", capacity: 1, createdBy: "key-admin" };
+const roomB: Resource = { id: "b", name: "Room B", capacity: 2, createdBy: "key-admin" };
 
 function booking(
   resourceId: string,
@@ -30,6 +30,7 @@ function booking(
     end,
     status,
     createdAt: "2026-08-01T00:00:00.000Z",
+    createdBy: "key-admin",
   };
 }
 
