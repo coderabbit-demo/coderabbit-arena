@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  actorCan,
   ApiKeyService,
   digestsMatch,
   generateSecret,
@@ -7,6 +8,8 @@ import {
   hashSecret,
   parseAuthorizationHeader,
   publicPrefix,
+  resolveScopes,
+  ROTATION_GRACE_HOURS,
 } from "./apiKeys";
 import { Actor, AuthError, ForbiddenError } from "./types";
 import { InMemoryStore } from "../store/store";
@@ -68,6 +71,36 @@ describe("hasPermission", () => {
     expect(hasPermission("viewer", "bookings:write")).toBe(false);
     expect(hasPermission("viewer", "bookings:read")).toBe(true);
   });
+
+  it("lets service keys reconcile bookings but not manage keys or audit", () => {
+    expect(hasPermission("service", "bookings:cancel:any")).toBe(true);
+    expect(hasPermission("service", "webhooks:manage")).toBe(true);
+    expect(hasPermission("service", "keys:manage")).toBe(false);
+    expect(hasPermission("service", "audit:read")).toBe(false);
+  });
+});
+
+describe("actorCan and scopes", () => {
+  it("treats missing or null scopes as the full role", () => {
+    expect(actorCan({ keyId: "k", name: "x", role: "member" }, "bookings:write")).toBe(true);
+    expect(
+      actorCan({ keyId: "k", name: "x", role: "member", scopes: null }, "bookings:write"),
+    ).toBe(true);
+  });
+
+  it("narrows a role to the listed scopes", () => {
+    const actor: Actor = { keyId: "k", name: "x", role: "admin", scopes: ["bookings:read"] };
+    expect(actorCan(actor, "bookings:read")).toBe(true);
+    expect(actorCan(actor, "keys:manage")).toBe(false);
+  });
+
+  it("never grants beyond the role even when scoped", () => {
+    expect(resolveScopes("member", ["bookings:read"])).toEqual(["bookings:read"]);
+    expect(resolveScopes("member", undefined)).toBeNull();
+    expect(() => resolveScopes("member", ["keys:manage"])).toThrow(/cannot be granted/);
+    expect(() => resolveScopes("member", ["nope"])).toThrow(/Unknown permission/);
+    expect(() => resolveScopes("member", [])).toThrow(AuthError);
+  });
 });
 
 describe("ApiKeyService", () => {
@@ -90,7 +123,7 @@ describe("ApiKeyService", () => {
   it("issues a key whose secret authenticates to the right actor", () => {
     const issued = service.issue({ name: "ci", role: "member" }, admin);
     const actor = service.authenticate(issued.secret);
-    expect(actor).toEqual({ keyId: issued.key.id, name: "ci", role: "member" });
+    expect(actor).toEqual({ keyId: issued.key.id, name: "ci", role: "member", scopes: null });
     expect(issued.key.prefix).toBe(publicPrefix(issued.secret));
     expect(issued.key.createdBy).toBe(admin.keyId);
   });
@@ -156,6 +189,83 @@ describe("ApiKeyService", () => {
     expect(() =>
       service.seed("nope_but_long_enough_secret_value", { name: "x", role: "admin" }),
     ).toThrow(AuthError);
+  });
+
+  it("issues scoped keys whose actor carries the scopes", () => {
+    const issued = service.issue(
+      { name: "signage", role: "member", scopes: ["bookings:read", "resources:read"] },
+      admin,
+    );
+    const actor = service.authenticate(issued.secret);
+    expect(actor.scopes).toEqual(["bookings:read", "resources:read"]);
+    expect(actorCan(actor, "bookings:write")).toBe(false);
+    expect(() =>
+      service.issue({ name: "bad", role: "viewer", scopes: ["bookings:write"] }, admin),
+    ).toThrow(AuthError);
+  });
+
+  it("expires keys after expiresInDays", () => {
+    let now = new Date("2026-09-01T00:00:00.000Z");
+    const clocked = new ApiKeyService(store, bus, () => now);
+    const issued = clocked.issue({ name: "temp", role: "viewer", expiresInDays: 7 }, admin);
+    expect(issued.key.expiresAt).toBe("2026-09-08T00:00:00.000Z");
+    expect(clocked.authenticate(issued.secret).role).toBe("viewer");
+
+    now = new Date("2026-09-08T00:00:00.000Z");
+    expect(() => clocked.authenticate(issued.secret)).toThrow(/expired/);
+  });
+
+  it("validates expiresInDays", () => {
+    expect(() => service.issue({ name: "x", role: "viewer", expiresInDays: 0 }, admin)).toThrow(
+      AuthError,
+    );
+    expect(() =>
+      service.issue({ name: "x", role: "viewer", expiresInDays: 1.5 }, admin),
+    ).toThrow(AuthError);
+    expect(() =>
+      service.issue({ name: "x", role: "viewer", expiresInDays: 9999 }, admin),
+    ).toThrow(AuthError);
+  });
+
+  it("rotates a secret and honours the grace window for the old one", () => {
+    let now = new Date("2026-09-01T00:00:00.000Z");
+    const clocked = new ApiKeyService(store, bus, () => now);
+    const issued = clocked.issue({ name: "bot", role: "service" }, admin);
+    const before = clocked.authenticate(issued.secret);
+
+    published.length = 0;
+    const rotated = clocked.rotate(issued.key.id, admin);
+    expect(rotated.secret).not.toBe(issued.secret);
+    expect(rotated.key.id).toBe(issued.key.id);
+    expect(rotated.key.prefix).toBe(publicPrefix(rotated.secret));
+    expect(rotated.key.rotatedAt).toBe("2026-09-01T00:00:00.000Z");
+    expect(JSON.stringify(rotated.key)).not.toContain("SecretHash");
+    expect(published.map((e) => e.event.type)).toEqual(["apikey.rotated"]);
+
+    // Both secrets work during the grace period and resolve to the same key.
+    expect(clocked.authenticate(rotated.secret).keyId).toBe(before.keyId);
+    expect(clocked.authenticate(issued.secret).keyId).toBe(before.keyId);
+
+    now = new Date(now.getTime() + ROTATION_GRACE_HOURS * 60 * 60 * 1000);
+    expect(() => clocked.authenticate(issued.secret)).toThrow(/Invalid API key/);
+    expect(clocked.authenticate(rotated.secret).keyId).toBe(before.keyId);
+  });
+
+  it("lets a key rotate itself but not other keys", () => {
+    const issued = service.issue({ name: "bot", role: "member" }, admin);
+    const other = service.issue({ name: "other", role: "member" }, admin);
+    const bot = service.authenticate(issued.secret);
+
+    const rotated = service.rotate(issued.key.id, bot);
+    expect(service.authenticate(rotated.secret).keyId).toBe(bot.keyId);
+    expect(() => service.rotate(other.key.id, bot)).toThrow(ForbiddenError);
+  });
+
+  it("refuses to rotate revoked or unknown keys", () => {
+    const issued = service.issue({ name: "bot", role: "member" }, admin);
+    service.revoke(issued.key.id, admin);
+    expect(() => service.rotate(issued.key.id, admin)).toThrow(ForbiddenError);
+    expect(() => service.rotate("missing", admin)).toThrow(AuthError);
   });
 
   it("publishes apikey.issued for every new key", () => {

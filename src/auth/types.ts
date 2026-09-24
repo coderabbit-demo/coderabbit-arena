@@ -1,9 +1,15 @@
-/** Coarse-grained roles attached to an API key. */
-export type Role = "admin" | "member" | "viewer";
+/**
+ * Coarse-grained roles attached to an API key. `service` is meant for
+ * machine-to-machine integrations (calendar sync, signage, bots) that need to
+ * act on bookings regardless of who created them.
+ */
+export type Role = "admin" | "member" | "viewer" | "service";
 
 /**
  * Fine-grained permissions. Roles map onto a fixed set of permissions (see
  * `ROLE_PERMISSIONS`) so route handlers never branch on role names directly.
+ * A key may additionally be narrowed to a subset of its role's permissions
+ * through `scopes`.
  */
 export type Permission =
   | "resources:read"
@@ -23,29 +29,50 @@ export interface ApiKey {
   prefix: string;
   /** Hex-encoded SHA-256 digest of the full secret. */
   secretHash: string;
+  /**
+   * Digest of the secret that was active before the last rotation. Stays
+   * valid until `previousSecretExpiresAt` so clients can roll over gradually.
+   */
+  previousSecretHash: string | null;
+  previousSecretExpiresAt: string | null;
   /** Human-readable label, e.g. "CI deploy bot". */
   name: string;
   role: Role;
+  /**
+   * Optional narrowing of the role's permissions. `null` means the key holds
+   * every permission of its role.
+   */
+  scopes: Permission[] | null;
   createdAt: string;
   /** Id of the key that issued this one, or null for bootstrap keys. */
   createdBy: string | null;
+  /** ISO-8601 instant after which the key no longer authenticates, or null. */
+  expiresAt: string | null;
   revokedAt: string | null;
   lastUsedAt: string | null;
+  /** When the secret was last rotated, or null if never. */
+  rotatedAt: string | null;
 }
 
-/** The safe-to-return projection of an API key (no hash). */
-export type PublicApiKey = Omit<ApiKey, "secretHash">;
+/** The safe-to-return projection of an API key (no hashes). */
+export type PublicApiKey = Omit<ApiKey, "secretHash" | "previousSecretHash">;
 
 /** Who is performing an action, resolved from a valid API key. */
 export interface Actor {
   keyId: string;
   name: string;
   role: Role;
+  /** Scopes from the key; undefined or null means the full role. */
+  scopes?: Permission[] | null;
 }
 
 export interface IssueKeyInput {
   name: string;
   role: Role;
+  /** Days until the key expires. Omit for a key that never expires. */
+  expiresInDays?: number;
+  /** Subset of the role's permissions to grant. Omit for the full role. */
+  scopes?: Permission[];
 }
 
 /** Returned exactly once when a key is issued; the secret cannot be recovered later. */

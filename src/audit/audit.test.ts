@@ -72,6 +72,13 @@ describe("summarize", () => {
     });
     expect(summarize({ type: "apikey.revoked", keyId: "k2" }).details).toEqual({});
     expect(
+      summarize({ type: "apikey.rotated", keyId: "k2", graceUntil: "2026-09-02T00:00:00.000Z" }),
+    ).toEqual({
+      subjectType: "apikey",
+      subjectId: "k2",
+      details: { graceUntil: "2026-09-02T00:00:00.000Z" },
+    });
+    expect(
       summarize({ type: "webhook.registered", webhookId: "w1", url: "https://x.test/h" }).details,
     ).toEqual({ url: "https://x.test/h" });
     expect(summarize({ type: "webhook.removed", webhookId: "w1" }).subjectType).toBe("webhook");

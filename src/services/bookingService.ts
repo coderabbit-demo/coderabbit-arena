@@ -14,7 +14,7 @@ import { buildUtilizationReport } from "../reports/reports";
 import { ReportInput, UtilizationReport } from "../reports/types";
 import { EventBus } from "../events/bus";
 import { Actor, ForbiddenError } from "../auth/types";
-import { assertPermission, hasPermission } from "../auth/apiKeys";
+import { actorCan, assertPermission } from "../auth/apiKeys";
 
 /** Input for creating a whole series of bookings from a recurrence rule. */
 export interface CreateRecurringBookingInput extends CreateBookingInput {
@@ -148,7 +148,8 @@ export class BookingService {
 
   /**
    * Cancel a booking. Members may only cancel bookings created with their own
-   * key; admins (holders of `bookings:cancel:any`) may cancel anything.
+   * key; holders of `bookings:cancel:any` (admins and service keys) may
+   * cancel anything, unless their key was scoped down.
    */
   cancelBooking(id: string, actor: Actor): Booking {
     assertPermission(actor, "bookings:write");
@@ -159,7 +160,7 @@ export class BookingService {
     }
     if (
       booking.createdBy !== actor.keyId &&
-      !hasPermission(actor.role, "bookings:cancel:any")
+      !actorCan(actor, "bookings:cancel:any")
     ) {
       throw new ForbiddenError("Only the creator or an admin may cancel this booking");
     }

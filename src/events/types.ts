@@ -14,6 +14,7 @@ export type DomainEvent =
   | { type: "booking.cancelled"; booking: Booking }
   | { type: "apikey.issued"; keyId: string; role: Role }
   | { type: "apikey.revoked"; keyId: string }
+  | { type: "apikey.rotated"; keyId: string; graceUntil: string }
   | { type: "webhook.registered"; webhookId: string; url: string }
   | { type: "webhook.removed"; webhookId: string };
 
@@ -41,6 +42,7 @@ export const EVENT_TYPES: readonly EventType[] = [
   "booking.cancelled",
   "apikey.issued",
   "apikey.revoked",
+  "apikey.rotated",
   "webhook.registered",
   "webhook.removed",
 ];
