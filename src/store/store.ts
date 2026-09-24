@@ -4,6 +4,12 @@ import { ApiKey } from "../auth/types";
 import { Booking, Resource } from "../domain/types";
 import { WebhookStore } from "../webhooks/dispatcher";
 import { Webhook, WebhookDelivery } from "../webhooks/types";
+import { Attachment } from "../attachments/types";
+import { AttachmentStore } from "../attachments/attachments";
+import { Note, NoteStore } from "../notes/notes";
+import { NotificationTemplate, TemplateStore } from "../notifications/templates";
+import { Contact, ContactStore } from "../notifications/notifications";
+import { Invite, InviteStore } from "../invites/invites";
 
 /** Persistence for the booking domain itself. */
 export interface BookingStore {
@@ -21,7 +27,16 @@ export interface BookingStore {
  * Everything the application persists. Each feature area declares the slice
  * it needs; this is the union a real database adapter must implement.
  */
-export interface Store extends BookingStore, ApiKeyStore, AuditStore, WebhookStore {}
+export interface Store
+  extends BookingStore,
+    ApiKeyStore,
+    AuditStore,
+    WebhookStore,
+    AttachmentStore,
+    NoteStore,
+    TemplateStore,
+    ContactStore,
+    InviteStore {}
 
 /**
  * Simple in-memory store. Swap this out for a database-backed implementation
@@ -34,6 +49,11 @@ export class InMemoryStore implements Store {
   private auditEntries: AuditEntry[] = [];
   private webhooks = new Map<string, Webhook>();
   private deliveries = new Map<string, WebhookDelivery>();
+  private attachments = new Map<string, Attachment>();
+  private notes: Note[] = [];
+  private templates = new Map<string, NotificationTemplate>();
+  private contacts = new Map<string, Contact>();
+  private invites = new Map<string, Invite>();
 
   // --- resources & bookings -------------------------------------------------
 
@@ -141,5 +161,107 @@ export class InMemoryStore implements Store {
     return [...this.deliveries.values()]
       .filter((d) => d.webhookId === webhookId)
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  // --- attachments ----------------------------------------------------------
+
+  addAttachment(attachment: Attachment): Attachment {
+    this.attachments.set(attachment.id, attachment);
+    return attachment;
+  }
+
+  getAttachment(id: string): Attachment | undefined {
+    return this.attachments.get(id);
+  }
+
+  attachmentsForBooking(bookingId: string): Attachment[] {
+    return [...this.attachments.values()]
+      .filter((a) => a.bookingId === bookingId)
+      .sort((a, b) => a.uploadedAt.localeCompare(b.uploadedAt));
+  }
+
+  removeAttachment(id: string): boolean {
+    return this.attachments.delete(id);
+  }
+
+  // --- notes ----------------------------------------------------------------
+
+  addNote(note: Note): Note {
+    this.notes.push(note);
+    return note;
+  }
+
+  notesForBooking(bookingId: string): Note[] {
+    return this.notes.filter((n) => n.bookingId === bookingId);
+  }
+
+  listNotes(): Note[] {
+    return this.notes;
+  }
+
+  removeNote(id: string): boolean {
+    const index = this.notes.findIndex((n) => n.id === id);
+    if (index < 0) {
+      return false;
+    }
+    this.notes.splice(index, 1);
+    return true;
+  }
+
+  // --- notification templates & contacts -----------------------------------
+
+  putTemplate(template: NotificationTemplate): NotificationTemplate {
+    this.templates.set(template.event, template);
+    return template;
+  }
+
+  getTemplate(event: string): NotificationTemplate | undefined {
+    return this.templates.get(event);
+  }
+
+  listTemplates(): NotificationTemplate[] {
+    return [...this.templates.values()];
+  }
+
+  putContact(contact: Contact): Contact {
+    this.contacts.set(contact.name, contact);
+    return contact;
+  }
+
+  getContact(name: string): Contact | undefined {
+    return this.contacts.get(name);
+  }
+
+  listContacts(): Contact[] {
+    return [...this.contacts.values()];
+  }
+
+  // --- invites --------------------------------------------------------------
+
+  addInvite(invite: Invite): Invite {
+    this.invites.set(invite.id, invite);
+    return invite;
+  }
+
+  getInvite(id: string): Invite | undefined {
+    return this.invites.get(id);
+  }
+
+  findInviteByToken(token: string): Invite | undefined {
+    for (const invite of this.invites.values()) {
+      if (invite.token === token) {
+        return invite;
+      }
+    }
+    return undefined;
+  }
+
+  listInvites(): Invite[] {
+    return [...this.invites.values()];
+  }
+
+  updateInvite(invite: Invite): Invite {
+    this.invites.set(invite.id, invite);
+    return invite;
   }
 }

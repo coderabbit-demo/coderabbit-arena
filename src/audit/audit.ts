@@ -106,6 +106,51 @@ export function summarize(event: DomainEvent): Pick<AuditEntry, "subjectType" | 
       };
     case "webhook.removed":
       return { subjectType: "webhook", subjectId: event.webhookId, details: {} };
+    case "note.added":
+      return {
+        subjectType: "note",
+        subjectId: event.noteId,
+        details: { bookingId: event.bookingId, text: event.text },
+      };
+    case "attachment.uploaded":
+      return {
+        subjectType: "attachment",
+        subjectId: event.attachmentId,
+        details: { bookingId: event.bookingId, filename: event.filename, size: event.size },
+      };
+    case "attachment.removed":
+      return {
+        subjectType: "attachment",
+        subjectId: event.attachmentId,
+        details: { bookingId: event.bookingId },
+      };
+    case "invite.created":
+      return {
+        subjectType: "invite",
+        subjectId: event.inviteId,
+        details: {
+          email: event.email,
+          role: event.role,
+          token: event.token,
+          expiresAt: event.expiresAt,
+        },
+      };
+    case "invite.accepted":
+      return {
+        subjectType: "invite",
+        subjectId: event.inviteId,
+        details: { keyId: event.keyId, role: event.role },
+      };
+    case "import.completed":
+      return {
+        subjectType: "import",
+        subjectId: `import-${Date.now()}`,
+        details: {
+          resourcesCreated: event.resourcesCreated,
+          bookingsCreated: event.bookingsCreated,
+          skipped: event.skipped,
+        },
+      };
   }
 }
 
