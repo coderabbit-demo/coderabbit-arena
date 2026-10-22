@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { AddressInfo } from "net";
-import { Server } from "http";
+import { request, Server } from "http";
 import { createApp } from "./app";
 import { AuditLog } from "../audit/audit";
 import { ApiKeyService } from "../auth/apiKeys";
@@ -256,6 +256,61 @@ describe("bookings end to end", () => {
 
     const bad = await call("GET", "/reports/utilization?from=x&to=y", { token: viewerSecret });
     expect(bad.status).toBe(400);
+  });
+
+  it("prices a member's long booking over a clipped report window", async () => {
+    const created = await call("POST", "/bookings", {
+      token: memberSecret,
+      body: {
+        resourceId: roomId,
+        bookedBy: "Ada",
+        start: "-271821-04-20T00:00:00.000Z",
+        end: "+275760-09-13T00:00:00.000Z",
+      },
+    });
+    expect(created.status).toBe(201);
+
+    const window = new URLSearchParams({
+      from: "0000-01-01T00:00:00.000Z",
+      to: "+010000-01-01T00:00:00.000Z",
+    });
+    const body = JSON.stringify({ rules: {
+      hourlyRateCents: 6000,
+      peakStartHour: 9,
+      peakEndHour: 17,
+      peakMultiplier: 1.5,
+      weekendSurcharge: 0,
+      minimumChargeCents: 0,
+    } });
+    // fetch forbids GET bodies; the report route accepts them via express.json.
+    const report = await new Promise<{ status: number | undefined; text: string }>((resolve, reject) => {
+      const req = request(`${baseUrl}/reports/utilization?${window}`, {
+        method: "GET",
+        headers: {
+          authorization: `Bearer ${memberSecret}`,
+          "content-type": "application/json",
+          "content-length": Buffer.byteLength(body),
+        },
+      }, (res) => {
+        let text = "";
+        res.setEncoding("utf8");
+        res.on("data", (chunk) => { text += chunk; });
+        res.on("end", () => resolve({ status: res.statusCode, text }));
+        res.on("error", reject);
+      });
+      req.on("error", reject);
+      req.end(body);
+    });
+
+    expect(report.status).toBe(200);
+    const days = 3652425; // Ten thousand Gregorian years, including leap days.
+    expect(JSON.parse(report.text).resources).toContainEqual(expect.objectContaining({
+      resourceId: roomId,
+      bookingCount: 1,
+      bookedMinutes: days * 1440,
+      utilization: 1,
+      revenueCents: days * 168000,
+    }));
   });
 });
 
