@@ -344,3 +344,73 @@ describe("events", () => {
     expect(ctx.published.filter((e) => e.event.type === "booking.cancelled")).toHaveLength(1);
   });
 });
+
+describe("listBookingsPage", () => {
+  let ctx: ReturnType<typeof setup>;
+
+  beforeEach(() => {
+    ctx = setup();
+    // Created out of order so the page order has to come from sorting.
+    for (const day of [3, 1, 4, 2, 5]) {
+      ctx.service.createBooking(
+        {
+          resourceId: ctx.room.id,
+          bookedBy: `Day ${day}`,
+          start: `2026-08-0${day}T09:00:00.000Z`,
+          end: `2026-08-0${day}T10:00:00.000Z`,
+        },
+        admin,
+      );
+    }
+  });
+
+  it("walks every booking in start order without gaps or duplicates", () => {
+    const seen: string[] = [];
+    let cursor: string | undefined;
+    for (let page = 0; page < 10; page++) {
+      const result = ctx.service.listBookingsPage({ resourceId: ctx.room.id, limit: 2, cursor });
+      seen.push(...result.data.map((b) => b.bookedBy));
+      if (!result.nextCursor) {
+        break;
+      }
+      cursor = result.nextCursor;
+    }
+    expect(seen).toEqual(["Day 1", "Day 2", "Day 3", "Day 4", "Day 5"]);
+  });
+
+  it("returns a null cursor on the last page", () => {
+    const page = ctx.service.listBookingsPage({ limit: 5 });
+    expect(page.data).toHaveLength(5);
+    expect(page.nextCursor).toBeNull();
+  });
+
+  it("rejects bad limits and cursors", () => {
+    expect(() => ctx.service.listBookingsPage({ limit: 0 })).toThrow(ValidationError);
+    expect(() => ctx.service.listBookingsPage({ limit: 201 })).toThrow(ValidationError);
+    expect(() => ctx.service.listBookingsPage({ cursor: "not-a-cursor" })).toThrow(/Invalid cursor/);
+  });
+});
+
+describe("booking.cancelled event", () => {
+  it("carries identifiers only, not the booking itself", () => {
+    const ctx = setup();
+    const booking = ctx.service.createBooking(
+      {
+        resourceId: ctx.room.id,
+        bookedBy: "Ada",
+        start: "2026-08-01T09:00:00.000Z",
+        end: "2026-08-01T10:00:00.000Z",
+      },
+      member,
+    );
+    const cancelled = ctx.service.cancelBooking(booking.id, member);
+    const event = ctx.published.find((e) => e.event.type === "booking.cancelled")?.event;
+    expect(event).toEqual({
+      type: "booking.cancelled",
+      bookingId: booking.id,
+      resourceId: ctx.room.id,
+      cancelledAt: cancelled.cancelledAt,
+      cancelledBy: member.keyId,
+    });
+  });
+});
