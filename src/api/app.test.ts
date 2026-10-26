@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { AddressInfo } from "net";
 import { request, Server } from "http";
 import { createApp } from "./app";
@@ -46,6 +46,7 @@ async function call(
 }
 
 beforeAll(async () => {
+  vi.stubEnv("CALENDAR_SYNC_TOKEN", "configured-calendar-sync-test-token");
   const store = new InMemoryStore();
   const bus = new EventBus();
   const audit = new AuditLog(store, bus);
@@ -76,6 +77,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await webhooks.drain();
   await new Promise<void>((resolve) => server.close(() => resolve()));
+  vi.unstubAllEnvs();
 });
 
 describe("authentication", () => {
@@ -102,14 +104,27 @@ describe("authentication", () => {
 
   it("lets the calendar sync worker in with its service token", async () => {
     const res = await call("GET", "/auth/whoami", {
-      headers: { "x-service-token": "calendar-sync-dev-token" },
+      headers: { "x-service-token": "configured-calendar-sync-test-token" },
     });
     expect(res.status).toBe(200);
     expect(res.json).toMatchObject({ name: "calendar sync service" });
   });
 
+  it.each(["", "calendar-sync-dev-token", "wrong-token"])(
+    "rejects an incorrect service token: %s",
+    async (token) => {
+      const res = await call("GET", "/auth/whoami", {
+        headers: { "x-service-token": token },
+      });
+      expect(res.status).toBe(401);
+    },
+  );
+
   it("identifies the caller on /auth/whoami", async () => {
-    const res = await call("GET", "/auth/whoami", { token: memberSecret });
+    const res = await call("GET", "/auth/whoami", {
+      token: memberSecret,
+      headers: { "x-service-token": "calendar-sync-dev-token" },
+    });
     expect(res.status).toBe(200);
     expect(res.json).toMatchObject({ name: "member", role: "member" });
   });
