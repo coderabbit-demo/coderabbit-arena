@@ -204,6 +204,28 @@ describe("bookings end to end", () => {
     expect(cancelled.json.status).toBe("cancelled");
   });
 
+  it("hides private bookings from other keys", async () => {
+    const created = await call("POST", "/bookings", {
+      token: memberSecret,
+      body: {
+        resourceId: roomId,
+        bookedBy: "Ada",
+        start: "2026-08-02T09:00:00Z",
+        end: "2026-08-02T10:00:00Z",
+        private: true,
+      },
+    });
+    expect(created.status).toBe(201);
+    expect(created.json.private).toBe(true);
+
+    const asViewer = await call("GET", `/bookings?resourceId=${roomId}`, { token: viewerSecret });
+    expect(asViewer.json).toHaveLength(0);
+    const asOwner = await call("GET", `/bookings?resourceId=${roomId}`, { token: memberSecret });
+    expect(asOwner.json).toHaveLength(1);
+    const asAdmin = await call("GET", `/bookings?resourceId=${roomId}`, { token: adminSecret });
+    expect(asAdmin.json).toHaveLength(1);
+  });
+
   it("maps domain errors to status codes", async () => {
     const missing = await call("POST", "/bookings", {
       token: memberSecret,

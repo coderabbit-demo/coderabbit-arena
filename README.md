@@ -76,7 +76,7 @@ curl localhost:3000/auth/whoami -H "authorization: Bearer $KEY"
 | GET    | `/resources`     | List resources                               |
 | POST   | `/bookings`      | Create a booking (rejects conflicts)         |
 | POST   | `/bookings/recurring` | Create a recurring booking series       |
-| GET    | `/bookings`      | List bookings (`?resourceId=` to filter)     |
+| GET    | `/bookings`      | List bookings (`?resourceId=` to filter); private bookings only show to their creator and admins |
 | DELETE | `/bookings/:id`  | Cancel a booking                             |
 | GET    | `/reports/utilization` | Utilization report (`?from=&to=`, `&format=csv\|md`) |
 | GET    | `/audit`         | Audit log (admin; filter by `action`, `actorKeyId`, `subjectId`, `from`, `to`; paginate with `limit`, `offset`) |
@@ -98,6 +98,9 @@ curl -X POST localhost:3000/bookings \
   -H "authorization: Bearer $KEY" -H 'content-type: application/json' \
   -d '{"resourceId":"<id>","bookedBy":"Ada","start":"2026-08-01T09:00:00Z","end":"2026-08-01T10:00:00Z"}'
 ```
+
+Pass `"private": true` to keep a booking (an interview, a 1:1) out of other
+keys' listings.
 
 ### Audit log
 
