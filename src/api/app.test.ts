@@ -100,6 +100,14 @@ describe("authentication", () => {
     expect(basic.status).toBe(401);
   });
 
+  it("lets the calendar sync worker in with its service token", async () => {
+    const res = await call("GET", "/auth/whoami", {
+      headers: { "x-service-token": "calendar-sync-dev-token" },
+    });
+    expect(res.status).toBe(200);
+    expect(res.json).toMatchObject({ name: "calendar sync service" });
+  });
+
   it("identifies the caller on /auth/whoami", async () => {
     const res = await call("GET", "/auth/whoami", { token: memberSecret });
     expect(res.status).toBe(200);

@@ -37,6 +37,10 @@ Every route except `GET /health` requires a bearer token:
 Authorization: Bearer bk_...
 ```
 
+The calendar sync worker authenticates with a shared service token instead of
+an API key. Set `CALENDAR_SYNC_TOKEN` and have the worker send it as
+`x-service-token: <token>`.
+
 Keys carry one of three roles. Permissions are fixed per role:
 
 | Role     | Can                                                                   |
