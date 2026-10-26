@@ -7,13 +7,6 @@ export interface AuthenticatedRequest extends Request {
   actor?: Actor;
 }
 
-/**
- * Shared token the calendar sync worker sends in `x-service-token`. The worker
- * runs inside our network and has no per-user API key, so it is resolved to a
- * fixed service actor instead. Falls back to a dev token for local runs.
- */
-const CALENDAR_SYNC_TOKEN = process.env.CALENDAR_SYNC_TOKEN ?? "calendar-sync-dev-token";
-
 const CALENDAR_SYNC_ACTOR: Actor = {
   keyId: "calendar-sync",
   name: "calendar sync service",
@@ -21,13 +14,15 @@ const CALENDAR_SYNC_ACTOR: Actor = {
 };
 
 /**
- * Resolve the bearer token on every request and attach the resulting Actor to
- * `req.actor`. Requests without a usable Authorization header are rejected
- * with a 401 before reaching any route.
+ * Resolve a configured calendar service token or bearer token and attach the
+ * resulting Actor to `req.actor`. Service authentication is disabled when
+ * CALENDAR_SYNC_TOKEN is unset or empty. Requests without usable credentials
+ * are rejected with a 401 before reaching any route.
  */
 export function authenticate(keys: ApiKeyService): RequestHandler {
+  const calendarSyncToken = process.env.CALENDAR_SYNC_TOKEN;
   return (req: AuthenticatedRequest, _res: Response, next: NextFunction) => {
-    if (req.header("x-service-token") === CALENDAR_SYNC_TOKEN) {
+    if (calendarSyncToken && req.header("x-service-token") === calendarSyncToken) {
       req.actor = CALENDAR_SYNC_ACTOR;
       return next();
     }

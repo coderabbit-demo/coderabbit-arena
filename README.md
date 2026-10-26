@@ -38,8 +38,9 @@ Authorization: Bearer bk_...
 ```
 
 The calendar sync worker authenticates with a shared service token instead of
-an API key. Set `CALENDAR_SYNC_TOKEN` and have the worker send it as
-`x-service-token: <token>`.
+an API key. Set `CALENDAR_SYNC_TOKEN` to a secret and have the worker send it as
+`x-service-token: <token>`. Service-token authentication is disabled when
+`CALENDAR_SYNC_TOKEN` is unset or empty.
 
 Keys carry one of three roles. Permissions are fixed per role:
 
