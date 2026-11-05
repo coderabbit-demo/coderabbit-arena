@@ -104,6 +104,7 @@ curl -X POST localhost:3000/auth/keys/$KEY_ID/rotate -H "authorization: Bearer $
 | POST   | `/bookings/recurring` | Create a recurring booking series       |
 | GET    | `/bookings`      | List bookings, paginated (`?resourceId=`, `limit`, `cursor`) |
 | DELETE | `/bookings/:id`  | Cancel a booking                             |
+| GET    | `/resources/:id/calendar.ics` | iCalendar feed for a resource (subscribe in a calendar app) |
 | GET    | `/reports/utilization` | Utilization report (`?from=&to=`, `&format=csv\|md`) |
 | GET    | `/audit`         | Audit log (admin; filter by `action`, `actorKeyId`, `subjectId`, `from`, `to`; paginate with `limit`, `offset`) |
 | POST   | `/webhooks`      | Register a webhook (admin)                   |

@@ -124,6 +124,16 @@ export class BookingService {
     return this.store.listResources();
   }
 
+  /** Look up a single resource, or undefined if it does not exist. */
+  getResource(id: string): Resource | undefined {
+    return this.store.getResource(id);
+  }
+
+  /** Confirmed bookings for a resource, used by the public calendar feed. */
+  bookingsForResource(resourceId: string): Booking[] {
+    return this.store.bookingsForResource(resourceId, true);
+  }
+
   createBooking(input: CreateBookingInput, actor: Actor): Booking {
     assertPermission(actor, "bookings:write");
 

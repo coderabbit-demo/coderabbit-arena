@@ -5,6 +5,7 @@ import { RecurrenceError } from "../recurrence/types";
 import { ReportError } from "../reports/types";
 import { reportToCsv } from "../reports/csv";
 import { reportToMarkdown } from "../reports/markdown";
+import { bookingsToIcs } from "../reports/ics";
 import { ApiKeyService } from "../auth/apiKeys";
 import { actorOf, authenticate, AuthenticatedRequest, requirePermission } from "../auth/middleware";
 import { AuthError, ForbiddenError } from "../auth/types";
@@ -165,6 +166,20 @@ export function createApp(deps: AppDependencies) {
       res.send(file.bytes);
     });
   }
+
+  // Public calendar feed: calendar apps subscribe to this URL directly and
+  // cannot send an API key, so it lives in front of the auth middleware like
+  // the invite and file links above.
+  app.get("/resources/:id/calendar.ics", (req, res) => {
+    const resource = service.getResource(req.params.id);
+    if (!resource) {
+      throw new NotFoundError(`Resource not found: ${req.params.id}`);
+    }
+    const bookings = service.bookingsForResource(resource.id);
+    res.type("text/calendar");
+    res.setHeader("Content-Disposition", `inline; filename="${resource.name}.ics"`);
+    res.send(bookingsToIcs(resource, bookings));
+  });
 
   app.use(authenticate(apiKeys));
 
