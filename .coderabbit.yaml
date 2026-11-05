@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://storage.googleapis.com/coderabbit_public_assets/schema.v2.json
+language: en-US
+
+knowledge_base:
+  # Multi-repo awareness: the calendar sync service consumes this API's REST
+  # endpoints and signed webhooks, so contract changes here can break it.
+  linked_repositories:
+    - repository: "coderabbit-demo/coderabbit-arena-calendar-sync"
+      instructions: >-
+        Downstream consumer of this Booking API. It calls GET /resources,
+        GET /bookings?resourceId= and GET /auth/whoami, and receives webhooks,
+        verifying the x-booking-* headers and signature scheme and reading the
+        event envelope and booking.* event payloads. When a PR here changes a
+        route, a response shape, the webhook signature format or headers, or an
+        event payload, check src/contract.ts, src/bookingClient.ts,
+        src/webhooks/verify.ts and src/sync/ in that repo and call out the exact
+        files and lines that break.

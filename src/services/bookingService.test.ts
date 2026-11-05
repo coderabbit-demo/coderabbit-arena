@@ -5,6 +5,7 @@ import { ValidationError } from "../domain/time";
 import { Actor, ForbiddenError } from "../auth/types";
 import { EventBus } from "../events/bus";
 import { EventEnvelope } from "../events/types";
+import { RecurrenceError } from "../recurrence/types";
 
 const admin: Actor = { keyId: "key-admin", name: "Admin", role: "admin" };
 const member: Actor = { keyId: "key-member", name: "Member", role: "member" };
@@ -143,7 +144,39 @@ describe("createRecurringBooking", () => {
       rule: { frequency: "weekly", interval: 1, count: 2 },
     }, admin);
 
-    expect(ctx.service.listBookings(ctx.room.id)).toHaveLength(2);
+    expect(ctx.service.listBookings(admin, ctx.room.id)).toHaveLength(2);
+  });
+
+  it.each([
+    { start: "2026-08-03T09:00:00Z", end: "2026-08-03T10:00:00Z", rule: { frequency: "daily" as const, interval: 100000000, count: 2 } },
+    { start: "2026-08-03T09:00:00Z", end: "2026-08-03T10:00:00Z", rule: { frequency: "weekly" as const, interval: 100000000, count: 2 } },
+    { start: "+275760-09-11T23:00:00Z", end: "+275760-09-12T01:00:00Z", rule: { frequency: "daily" as const, interval: 1, count: 2 } },
+  ])("rejects a series with an invalid generated timestamp", (input) => {
+    ctx.published.length = 0;
+    expect(() => ctx.service.createRecurringBooking({
+      resourceId: ctx.room.id,
+      bookedBy: "Ada",
+      ...input,
+    }, member)).toThrow(RecurrenceError);
+    expect(ctx.store.listBookings()).toEqual([]);
+    expect(ctx.published).toEqual([]);
+  });
+
+  it("builds every booking before persisting if the clock fails", () => {
+    let calls = 0;
+    const service = new BookingService(ctx.store, ctx.bus, () =>
+      ++calls === 2 ? new Date(NaN) : new Date("2026-01-01T00:00:00Z"),
+    );
+    ctx.published.length = 0;
+    expect(() => service.createRecurringBooking({
+      resourceId: ctx.room.id,
+      bookedBy: "Ada",
+      start: "2026-08-03T09:00:00Z",
+      end: "2026-08-03T10:00:00Z",
+      rule: { frequency: "daily", interval: 1, count: 2 },
+    }, member)).toThrow(RangeError);
+    expect(ctx.store.listBookings()).toEqual([]);
+    expect(ctx.published).toEqual([]);
   });
 
   it("rejects the whole series when one occurrence conflicts", () => {
@@ -165,7 +198,7 @@ describe("createRecurringBooking", () => {
     ).toThrow(ConflictError);
 
     // Nothing from the series should have been persisted.
-    expect(ctx.service.listBookings(ctx.room.id)).toHaveLength(1);
+    expect(ctx.service.listBookings(admin, ctx.room.id)).toHaveLength(1);
   });
 
   it("rejects a series that overlaps itself on a capacity-1 resource", () => {
@@ -342,5 +375,75 @@ describe("events", () => {
     ctx.service.cancelBooking(booking.id, admin);
     ctx.service.cancelBooking(booking.id, admin);
     expect(ctx.published.filter((e) => e.event.type === "booking.cancelled")).toHaveLength(1);
+  });
+});
+
+describe("listBookingsPage", () => {
+  let ctx: ReturnType<typeof setup>;
+
+  beforeEach(() => {
+    ctx = setup();
+    // Created out of order so the page order has to come from sorting.
+    for (const day of [3, 1, 4, 2, 5]) {
+      ctx.service.createBooking(
+        {
+          resourceId: ctx.room.id,
+          bookedBy: `Day ${day}`,
+          start: `2026-08-0${day}T09:00:00.000Z`,
+          end: `2026-08-0${day}T10:00:00.000Z`,
+        },
+        admin,
+      );
+    }
+  });
+
+  it("walks every booking in start order without gaps or duplicates", () => {
+    const seen: string[] = [];
+    let cursor: string | undefined;
+    for (let page = 0; page < 10; page++) {
+      const result = ctx.service.listBookingsPage({ resourceId: ctx.room.id, limit: 2, cursor });
+      seen.push(...result.data.map((b) => b.bookedBy));
+      if (!result.nextCursor) {
+        break;
+      }
+      cursor = result.nextCursor;
+    }
+    expect(seen).toEqual(["Day 1", "Day 2", "Day 3", "Day 4", "Day 5"]);
+  });
+
+  it("returns a null cursor on the last page", () => {
+    const page = ctx.service.listBookingsPage({ limit: 5 });
+    expect(page.data).toHaveLength(5);
+    expect(page.nextCursor).toBeNull();
+  });
+
+  it("rejects bad limits and cursors", () => {
+    expect(() => ctx.service.listBookingsPage({ limit: 0 })).toThrow(ValidationError);
+    expect(() => ctx.service.listBookingsPage({ limit: 201 })).toThrow(ValidationError);
+    expect(() => ctx.service.listBookingsPage({ cursor: "not-a-cursor" })).toThrow(/Invalid cursor/);
+  });
+});
+
+describe("booking.cancelled event", () => {
+  it("carries identifiers only, not the booking itself", () => {
+    const ctx = setup();
+    const booking = ctx.service.createBooking(
+      {
+        resourceId: ctx.room.id,
+        bookedBy: "Ada",
+        start: "2026-08-01T09:00:00.000Z",
+        end: "2026-08-01T10:00:00.000Z",
+      },
+      member,
+    );
+    const cancelled = ctx.service.cancelBooking(booking.id, member);
+    const event = ctx.published.find((e) => e.event.type === "booking.cancelled")?.event;
+    expect(event).toEqual({
+      type: "booking.cancelled",
+      bookingId: booking.id,
+      resourceId: ctx.room.id,
+      cancelledAt: cancelled.cancelledAt,
+      cancelledBy: member.keyId,
+    });
   });
 });

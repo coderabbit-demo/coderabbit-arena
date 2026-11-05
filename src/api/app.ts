@@ -183,6 +183,10 @@ export function createApp(deps: AppDependencies) {
     res.json(apiKeys.list(actorOf(req)));
   });
 
+  app.get("/auth/keys/:id", requirePermission("keys:manage"), (req, res) => {
+    res.json(apiKeys.get(req.params.id, actorOf(req)));
+  });
+
   app.delete("/auth/keys/:id", requirePermission("keys:manage"), (req, res) => {
     res.json(apiKeys.revoke(req.params.id, actorOf(req)));
   });
@@ -229,7 +233,13 @@ export function createApp(deps: AppDependencies) {
   });
 
   app.get("/bookings", requirePermission("bookings:read"), (req, res) => {
-    res.json(service.listBookings(queryString(req, "resourceId")));
+    res.json(
+      service.listBookingsPage({
+        resourceId: queryString(req, "resourceId"),
+        limit: queryNumber(req, "limit"),
+        cursor: queryString(req, "cursor"),
+      }),
+    );
   });
 
   app.delete("/bookings/:id", requirePermission("bookings:write"), (req, res) => {

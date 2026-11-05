@@ -18,18 +18,37 @@ export const KEY_PREFIX = "bk";
 const SECRET_BYTES = 24;
 /** Characters of the secret (after the prefix) kept as the public, searchable prefix. */
 const PUBLIC_PREFIX_CHARS = 8;
+/** Longest lifetime a key may be issued with. */
+export const MAX_KEY_TTL_DAYS = 365;
+/** How long the previous secret keeps working after a rotation. */
+export const ROTATION_GRACE_HOURS = 24;
 
-const ROLES: readonly Role[] = ["admin", "member", "viewer"];
+const ROLES: readonly Role[] = ["admin", "member", "viewer", "service"];
+
+export const ALL_PERMISSIONS: readonly Permission[] = [
+  "resources:read",
+  "resources:write",
+  "bookings:read",
+  "bookings:write",
+  "bookings:cancel:any",
+  "reports:read",
+  "keys:manage",
+  "webhooks:manage",
+  "audit:read",
+];
 
 /**
  * Permission matrix. Admins can do everything; members can manage bookings
- * they own and read most things; viewers are read-only.
+ * they own and read most things; viewers are read-only. Service keys are for
+ * integrations that reconcile bookings on behalf of many people, so they can
+ * cancel any booking and manage their own webhook subscriptions.
  */
 export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   admin: [
     "resources:read",
     "resources:write",
     "bookings:read",
+    "bookings:read:private",
     "bookings:write",
     "bookings:cancel:any",
     "reports:read",
@@ -39,21 +58,48 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   ],
   member: ["resources:read", "bookings:read", "bookings:write", "reports:read"],
   viewer: ["resources:read", "bookings:read", "reports:read"],
+  service: [
+    "resources:read",
+    "bookings:read",
+    "bookings:write",
+    "bookings:cancel:any",
+    "reports:read",
+    "webhooks:manage",
+  ],
 };
 
 export function isRole(value: unknown): value is Role {
   return typeof value === "string" && (ROLES as readonly string[]).includes(value);
 }
 
+export function isPermission(value: unknown): value is Permission {
+  return typeof value === "string" && (ALL_PERMISSIONS as readonly string[]).includes(value);
+}
+
+/** Whether `role` holds `permission`, ignoring any per-key scopes. */
 export function hasPermission(role: Role, permission: Permission): boolean {
   return ROLE_PERMISSIONS[role].includes(permission);
 }
 
+/**
+ * Whether an actor may perform `permission`: the role must grant it and, if
+ * the key was issued with scopes, the scope list must include it as well.
+ */
+export function actorCan(actor: Actor, permission: Permission): boolean {
+  if (!hasPermission(actor.role, permission)) {
+    return false;
+  }
+  if (actor.scopes == null) {
+    return true;
+  }
+  return actor.scopes.includes(permission);
+}
+
 /** Throw a ForbiddenError unless `actor` holds `permission`. */
 export function assertPermission(actor: Actor, permission: Permission): void {
-  if (!hasPermission(actor.role, permission)) {
+  if (!actorCan(actor, permission)) {
     throw new ForbiddenError(
-      `Role "${actor.role}" is not allowed to perform ${permission}`,
+      `Key "${actor.name}" (${actor.role}) is not allowed to perform ${permission}`,
     );
   }
 }
@@ -113,13 +159,52 @@ export interface ApiKeyStore {
 }
 
 export function toPublicKey(key: ApiKey): PublicApiKey {
-  const { secretHash: _hash, ...rest } = key;
+  const { secretHash: _hash, previousSecretHash: _previous, ...rest } = key;
   return rest;
 }
 
+function toActor(key: ApiKey): Actor {
+  return { keyId: key.id, name: key.name, role: key.role, scopes: key.scopes };
+}
+
 /**
- * Issues, revokes and authenticates API keys. Secrets are only ever held in
- * memory long enough to hash them.
+ * Validate and normalise the `scopes` on an issue request. Scopes must be a
+ * subset of what the role grants; asking for more is an error rather than a
+ * silent clamp so misconfigured automation fails loudly.
+ */
+export function resolveScopes(role: Role, requested: unknown): Permission[] | null {
+  if (requested === undefined || requested === null) {
+    return null;
+  }
+  if (!Array.isArray(requested) || requested.length === 0) {
+    throw new AuthError("scopes must be a non-empty array of permissions");
+  }
+  const scopes = new Set<Permission>();
+  for (const value of requested) {
+    if (!isPermission(value)) {
+      throw new AuthError(`Unknown permission in scopes: ${String(value)}`);
+    }
+    if (!hasPermission(role, value)) {
+      throw new AuthError(`Role "${role}" cannot be granted ${value}`);
+    }
+    scopes.add(value);
+  }
+  return [...scopes];
+}
+
+function resolveExpiry(days: unknown, now: Date): string | null {
+  if (days === undefined || days === null) {
+    return null;
+  }
+  if (typeof days !== "number" || !Number.isInteger(days) || days < 1 || days > MAX_KEY_TTL_DAYS) {
+    throw new AuthError(`expiresInDays must be an integer between 1 and ${MAX_KEY_TTL_DAYS}`);
+  }
+  return new Date(now.getTime() + days * 24 * 60 * 60 * 1000).toISOString();
+}
+
+/**
+ * Issues, revokes, rotates and authenticates API keys. Secrets are only ever
+ * held in memory long enough to hash them.
  */
 export class ApiKeyService {
   constructor(
@@ -159,6 +244,15 @@ export class ApiKeyService {
     return toPublicKey(this.persist(secret, input, null));
   }
 
+  get(id: string, actor: Actor): PublicApiKey {
+    assertPermission(actor, "keys:manage");
+    const key = this.store.getApiKey(id);
+    if (!key) {
+      throw new AuthError(`API key not found: ${id}`);
+    }
+    return toPublicKey(key);
+  }
+
   revoke(id: string, actor: Actor): PublicApiKey {
     assertPermission(actor, "keys:manage");
     const key = this.store.getApiKey(id);
@@ -179,6 +273,42 @@ export class ApiKeyService {
     return toPublicKey(revoked);
   }
 
+  /**
+   * Replace the secret behind a key. Admins may rotate any key and every key
+   * may rotate itself, so long-lived integrations can roll credentials
+   * without an operator. The previous secret keeps authenticating for
+   * `ROTATION_GRACE_HOURS` so deployments can pick up the new one gradually.
+   */
+  rotate(id: string, actor: Actor): IssuedKey {
+    if (actor.keyId !== id) {
+      assertPermission(actor, "keys:manage");
+    }
+    const key = this.store.getApiKey(id);
+    if (!key) {
+      throw new AuthError(`API key not found: ${id}`);
+    }
+    if (key.revokedAt) {
+      throw new ForbiddenError("Revoked keys cannot be rotated");
+    }
+
+    const now = this.clock();
+    const secret = generateSecret();
+    const graceUntil = new Date(now.getTime() + ROTATION_GRACE_HOURS * 60 * 60 * 1000);
+    const rotated = this.store.updateApiKey({
+      ...key,
+      prefix: publicPrefix(secret),
+      secretHash: hashSecret(secret),
+      previousSecretHash: key.secretHash,
+      previousSecretExpiresAt: graceUntil.toISOString(),
+      rotatedAt: now.toISOString(),
+    });
+    this.bus.publish(
+      { type: "apikey.rotated", keyId: rotated.id, graceUntil: graceUntil.toISOString() },
+      actor,
+    );
+    return { key: toPublicKey(rotated), secret };
+  }
+
   list(actor: Actor): PublicApiKey[] {
     assertPermission(actor, "keys:manage");
     return this.store.listApiKeys().map(toPublicKey);
@@ -191,9 +321,18 @@ export class ApiKeyService {
    */
   authenticate(secret: string): Actor {
     const digest = hashSecret(secret);
+    const nowIso = this.clock().toISOString();
     let match: ApiKey | undefined;
     for (const key of this.store.listApiKeys()) {
       if (digestsMatch(key.secretHash, digest)) {
+        match = key;
+      }
+      if (
+        key.previousSecretHash &&
+        key.previousSecretExpiresAt &&
+        key.previousSecretExpiresAt > nowIso &&
+        digestsMatch(key.previousSecretHash, digest)
+      ) {
         match = key;
       }
     }
@@ -203,8 +342,11 @@ export class ApiKeyService {
     if (match.revokedAt) {
       throw new AuthError("API key has been revoked");
     }
-    this.store.updateApiKey({ ...match, lastUsedAt: this.clock().toISOString() });
-    return { keyId: match.id, name: match.name, role: match.role };
+    if (match.expiresAt && match.expiresAt <= nowIso) {
+      throw new AuthError("API key has expired");
+    }
+    this.store.updateApiKey({ ...match, lastUsedAt: nowIso });
+    return toActor(match);
   }
 
   private persist(secret: string, input: IssueKeyInput, createdBy: string | null): ApiKey {
@@ -215,16 +357,22 @@ export class ApiKeyService {
     if (!isRole(input.role)) {
       throw new AuthError(`Unknown role: ${String(input.role)}`);
     }
+    const now = this.clock();
     const key = this.store.addApiKey({
       id: randomUUID(),
       prefix: publicPrefix(secret),
       secretHash: hashSecret(secret),
+      previousSecretHash: null,
+      previousSecretExpiresAt: null,
       name,
       role: input.role,
-      createdAt: this.clock().toISOString(),
+      scopes: resolveScopes(input.role, input.scopes),
+      createdAt: now.toISOString(),
       createdBy,
+      expiresAt: resolveExpiry(input.expiresInDays, now),
       revokedAt: null,
       lastUsedAt: null,
+      rotatedAt: null,
     });
     this.bus.publish(
       { type: "apikey.issued", keyId: key.id, role: key.role },
