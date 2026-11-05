@@ -109,7 +109,8 @@ curl -X POST localhost:3000/auth/keys/$KEY_ID/rotate -H "authorization: Bearer $
 | GET    | `/bookings`      | List bookings, paginated (`?resourceId=`, `limit`, `cursor`) |
 | PATCH  | `/bookings/:id`  | Edit a booking (`bookedBy`, `start`, `end`, `private`) |
 | DELETE | `/bookings/:id`  | Cancel a booking                             |
-| GET    | `/resources/:id/calendar.ics` | iCalendar feed for a resource (subscribe in a calendar app) |
+| POST   | `/bookings/:id/share` | Create a public read-only share link for a booking |
+| GET    | `/shared/:token` | View a shared booking (unauthenticated)      |
 | GET    | `/reports/utilization` | Utilization report (`?from=&to=`, `&format=csv\|md`) |
 | GET    | `/audit`         | Audit log (admin; filter by `action`, `actorKeyId`, `subjectId`, `from`, `to`; paginate with `limit`, `offset`) |
 | POST   | `/webhooks`      | Register a webhook (admin)                   |

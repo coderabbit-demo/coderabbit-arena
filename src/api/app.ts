@@ -16,6 +16,7 @@ import { WebhookError } from "../webhooks/types";
 import { AttachmentService } from "../attachments/attachments";
 import { AttachmentError } from "../attachments/types";
 import { NoteService } from "../notes/notes";
+import { ShareLinkService } from "../services/shareLinks";
 import { NotificationService } from "../notifications/notifications";
 import { TemplateError } from "../notifications/templates";
 import { assertAnonymous, InviteError, InviteService } from "../invites/invites";
@@ -30,6 +31,7 @@ export interface AppDependencies {
   webhooks: WebhookService;
   attachments?: AttachmentService;
   notes?: NoteService;
+  shareLinks?: ShareLinkService;
   notifications?: NotificationService;
   invites?: InviteService;
   importer?: ImportExportService;
@@ -121,6 +123,7 @@ export function createApp(deps: AppDependencies) {
     webhooks,
     attachments,
     notes,
+    shareLinks,
     notifications,
     invites,
     importer,
@@ -167,19 +170,13 @@ export function createApp(deps: AppDependencies) {
     });
   }
 
-  // Public calendar feed: calendar apps subscribe to this URL directly and
-  // cannot send an API key, so it lives in front of the auth middleware like
-  // the invite and file links above.
-  app.get("/resources/:id/calendar.ics", (req, res) => {
-    const resource = service.getResource(req.params.id);
-    if (!resource) {
-      throw new NotFoundError(`Resource not found: ${req.params.id}`);
-    }
-    const bookings = service.bookingsForResource(resource.id);
-    res.type("text/calendar");
-    res.setHeader("Content-Disposition", `inline; filename="${resource.name}.ics"`);
-    res.send(bookingsToIcs(resource, bookings));
-  });
+  if (shareLinks) {
+    // A share link is pasted straight into a URL, so it is read without an API
+    // key, like the invite and file links above.
+    app.get("/shared/:token", (req, res) => {
+      res.json(shareLinks.resolve(req.params.token));
+    });
+  }
 
   app.use(authenticate(apiKeys));
 
@@ -265,6 +262,12 @@ export function createApp(deps: AppDependencies) {
     const booking = service.cancelBooking(req.params.id, actorOf(req));
     res.json(booking);
   });
+
+  if (shareLinks) {
+    app.post("/bookings/:id/share", requirePermission("bookings:write"), (req, res) => {
+      res.status(201).json(shareLinks.create(req.params.id));
+    });
+  }
 
   // --- notes ----------------------------------------------------------------
 
