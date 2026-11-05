@@ -5,6 +5,7 @@ import { RecurrenceError } from "../recurrence/types";
 import { ReportError } from "../reports/types";
 import { reportToCsv } from "../reports/csv";
 import { reportToMarkdown } from "../reports/markdown";
+import { reportToPdf } from "../reports/pdf";
 import { ApiKeyService } from "../auth/apiKeys";
 import { actorOf, authenticate, AuthenticatedRequest, requirePermission } from "../auth/middleware";
 import { AuthError, ForbiddenError } from "../auth/types";
@@ -341,7 +342,7 @@ export function createApp(deps: AppDependencies) {
 
   // --- reports --------------------------------------------------------------
 
-  app.get("/reports/utilization", requirePermission("reports:read"), (req, res) => {
+  app.get("/reports/utilization", requirePermission("reports:read"), wrap(async (req, res) => {
     const report = service.utilizationReport({
       window: {
         from: queryString(req, "from") ?? "",
@@ -359,8 +360,15 @@ export function createApp(deps: AppDependencies) {
       res.type("text/markdown").send(reportToMarkdown(report));
       return;
     }
+    if (format === "pdf") {
+      const pdf = await reportToPdf(report, { title: queryString(req, "title") });
+      res.type("application/pdf");
+      res.setHeader("Content-Disposition", 'attachment; filename="utilization.pdf"');
+      res.send(pdf);
+      return;
+    }
     res.json(report);
-  });
+  }));
 
   // --- import / export ------------------------------------------------------
 
