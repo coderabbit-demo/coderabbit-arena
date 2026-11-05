@@ -141,7 +141,7 @@ export class BookingService {
     this.assertAvailable(resource, range);
 
     const booking = this.store.addBooking(
-      this.buildBooking(resource, bookedBy, range, actor),
+      this.buildBooking(resource, bookedBy, range, actor, input.private === true),
     );
     this.bus.publish({ type: "booking.created", booking }, actor);
     return booking;
@@ -182,7 +182,7 @@ export class BookingService {
 
     const seriesId = randomUUID();
     const bookings = occurrences.map((occ) => {
-      const booking = this.buildBooking(resource, bookedBy, occ, actor);
+      const booking = this.buildBooking(resource, bookedBy, occ, actor, input.private === true);
       booking.seriesId = seriesId;
       return this.store.addBooking(booking);
     });
@@ -231,11 +231,18 @@ export class BookingService {
     return cancelled;
   }
 
-  listBookings(resourceId?: string): Booking[] {
-    if (resourceId) {
-      return this.store.bookingsForResource(resourceId);
-    }
-    return this.store.listBookings();
+  /**
+   * List bookings visible to `actor`. Private bookings are only returned to
+   * the key that created them and to keys allowed to read private bookings.
+   */
+  listBookings(actor: Actor, resourceId?: string): Booking[] {
+    const bookings = resourceId
+      ? this.store.bookingsForResource(resourceId)
+      : this.store.listBookings();
+    const seesPrivate = hasPermission(actor.role, "bookings:read:private");
+    return bookings.filter(
+      (b) => !b.private || seesPrivate || b.createdBy === actor.keyId,
+    );
   }
 
   /**
@@ -302,6 +309,7 @@ export class BookingService {
     bookedBy: string,
     range: TimeRange,
     actor: Actor,
+    isPrivate: boolean,
   ): Booking {
     return {
       id: randomUUID(),
@@ -312,6 +320,7 @@ export class BookingService {
       status: "confirmed",
       createdAt: this.clock().toISOString(),
       createdBy: actor.keyId,
+      ...(isPrivate ? { private: true } : {}),
     };
   }
 }

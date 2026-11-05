@@ -7,13 +7,25 @@ export interface AuthenticatedRequest extends Request {
   actor?: Actor;
 }
 
+const CALENDAR_SYNC_ACTOR: Actor = {
+  keyId: "calendar-sync",
+  name: "calendar sync service",
+  role: "admin",
+};
+
 /**
- * Resolve the bearer token on every request and attach the resulting Actor to
- * `req.actor`. Requests without a usable Authorization header are rejected
- * with a 401 before reaching any route.
+ * Resolve a configured calendar service token or bearer token and attach the
+ * resulting Actor to `req.actor`. Service authentication is disabled when
+ * CALENDAR_SYNC_TOKEN is unset or empty. Requests without usable credentials
+ * are rejected with a 401 before reaching any route.
  */
 export function authenticate(keys: ApiKeyService): RequestHandler {
+  const calendarSyncToken = process.env.CALENDAR_SYNC_TOKEN;
   return (req: AuthenticatedRequest, _res: Response, next: NextFunction) => {
+    if (calendarSyncToken && req.header("x-service-token") === calendarSyncToken) {
+      req.actor = CALENDAR_SYNC_ACTOR;
+      return next();
+    }
     const token = parseAuthorizationHeader(req.header("authorization"));
     if (!token) {
       return next(new AuthError("Missing or malformed Authorization header"));

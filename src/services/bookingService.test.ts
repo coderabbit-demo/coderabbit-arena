@@ -143,7 +143,7 @@ describe("createRecurringBooking", () => {
       rule: { frequency: "weekly", interval: 1, count: 2 },
     }, admin);
 
-    expect(ctx.service.listBookings(ctx.room.id)).toHaveLength(2);
+    expect(ctx.service.listBookings(admin, ctx.room.id)).toHaveLength(2);
   });
 
   it("rejects the whole series when one occurrence conflicts", () => {
@@ -165,7 +165,7 @@ describe("createRecurringBooking", () => {
     ).toThrow(ConflictError);
 
     // Nothing from the series should have been persisted.
-    expect(ctx.service.listBookings(ctx.room.id)).toHaveLength(1);
+    expect(ctx.service.listBookings(admin, ctx.room.id)).toHaveLength(1);
   });
 
   it("rejects a series that overlaps itself on a capacity-1 resource", () => {

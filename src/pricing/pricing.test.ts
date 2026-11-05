@@ -81,6 +81,52 @@ describe("quote", () => {
     expect(result.totalCents).toBe(7200);
   });
 
+  it.each([
+    // Preserve rounding and sampling from the booking's start, including seconds.
+    ["2026-08-05T08:59:45Z", "2026-08-05T09:00:14Z", 0, 0],
+    ["2026-08-05T08:59:45Z", "2026-08-05T09:00:15Z", 1, 0],
+    ["2026-08-05T08:59:45Z", "2026-08-05T09:01:15Z", 1, 1],
+    ["2026-08-05T16:59:45Z", "2026-08-05T17:01:15Z", 1, 1],
+    ["2026-08-05T16:30:00Z", "2026-08-06T09:30:00Z", 960, 60],
+    ["2026-08-05T16:30:00Z", "2026-08-08T09:30:00Z", 2880, 1020],
+    ["1969-12-31T23:30:00Z", "1970-01-01T09:30:00Z", 570, 30],
+  ])("preserves minute pricing from %s to %s", (from, to, offPeak, peak) => {
+    const result = quote({ start: new Date(from), end: new Date(to), rules });
+    expect(result.minutes).toBe(offPeak + peak);
+    expect(result.offPeakCents).toBe(offPeak * 100);
+    expect(result.peakCents).toBe(peak * 150);
+  });
+
+  it.each([
+    [0, 24, 1440],
+    [9, 9, 0],
+    [24, 24, 0],
+    [9.5, 17.5, 480],
+    [9.1, 9.9, 0],
+  ])("prices a day with peak hours %s to %s", (peakStartHour, peakEndHour, peak) => {
+    const result = quote({
+      start: new Date("2026-08-05T12:34:56.789Z"),
+      end: new Date("2026-08-06T12:34:56.789Z"),
+      rules: { ...rules, peakStartHour, peakEndHour },
+    });
+    expect(result.minutes).toBe(1440);
+    expect(result.peakCents).toBe(peak * 150);
+    expect(result.offPeakCents).toBe((1440 - peak) * 100);
+  });
+
+  it("prices the entire valid Date range without iterating over its minutes", () => {
+    const result = quote({
+      start: new Date(-8640000000000000),
+      end: new Date(8640000000000000),
+      rules: { ...rules, weekendSurcharge: 0 },
+    });
+    const days = 200000000;
+    expect(result.minutes).toBe(days * 1440);
+    expect(result.peakCents).toBe(days * 480 * 150);
+    expect(result.offPeakCents).toBe(days * 960 * 100);
+    expect(result.totalCents).toBe(days * 168000);
+  });
+
   it("applies a discount after the surcharge", () => {
     const result = quote({
       start: new Date("2026-08-01T07:00:00.000Z"),

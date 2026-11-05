@@ -37,6 +37,11 @@ Every route except `GET /health` requires a bearer token:
 Authorization: Bearer bk_...
 ```
 
+The calendar sync worker authenticates with a shared service token instead of
+an API key. Set `CALENDAR_SYNC_TOKEN` to a secret and have the worker send it as
+`x-service-token: <token>`. Service-token authentication is disabled when
+`CALENDAR_SYNC_TOKEN` is unset or empty.
+
 Keys carry one of three roles. Permissions are fixed per role:
 
 | Role     | Can                                                                   |
@@ -94,6 +99,9 @@ curl -X POST localhost:3000/bookings \
   -H "authorization: Bearer $KEY" -H 'content-type: application/json' \
   -d '{"resourceId":"<id>","bookedBy":"Ada","start":"2026-08-01T09:00:00Z","end":"2026-08-01T10:00:00Z"}'
 ```
+
+Pass `"private": true` to keep a booking (an interview, a 1:1) out of other
+keys' listings.
 
 ### Audit log
 
