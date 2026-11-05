@@ -27,7 +27,31 @@ export type DomainEvent =
   | { type: "apikey.revoked"; keyId: string }
   | { type: "apikey.rotated"; keyId: string; graceUntil: string }
   | { type: "webhook.registered"; webhookId: string; url: string }
-  | { type: "webhook.removed"; webhookId: string };
+  | { type: "webhook.removed"; webhookId: string }
+  | { type: "note.added"; noteId: string; bookingId: string; text: string }
+  | {
+      type: "attachment.uploaded";
+      attachmentId: string;
+      bookingId: string;
+      filename: string;
+      size: number;
+    }
+  | { type: "attachment.removed"; attachmentId: string; bookingId: string }
+  | {
+      type: "invite.created";
+      inviteId: string;
+      email: string;
+      role: Role;
+      token: string;
+      expiresAt: string;
+    }
+  | { type: "invite.accepted"; inviteId: string; keyId: string; role: Role }
+  | {
+      type: "import.completed";
+      resourcesCreated: number;
+      bookingsCreated: number;
+      skipped: number;
+    };
 
 export type EventType = DomainEvent["type"];
 
@@ -56,6 +80,12 @@ export const EVENT_TYPES: readonly EventType[] = [
   "apikey.rotated",
   "webhook.registered",
   "webhook.removed",
+  "note.added",
+  "attachment.uploaded",
+  "attachment.removed",
+  "invite.created",
+  "invite.accepted",
+  "import.completed",
 ];
 
 export function isEventType(value: unknown): value is EventType {

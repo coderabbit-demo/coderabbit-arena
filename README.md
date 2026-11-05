@@ -110,6 +110,33 @@ curl -X POST localhost:3000/auth/keys/$KEY_ID/rotate -H "authorization: Bearer $
 | GET    | `/webhooks`      | List webhooks (admin)                        |
 | DELETE | `/webhooks/:id`  | Remove a webhook (admin)                     |
 | GET    | `/webhooks/:id/deliveries` | Delivery attempts for a webhook (admin) |
+| POST   | `/auth/invites`  | Invite someone by email; they get their own key (admin) |
+| GET    | `/auth/invites`  | List invites (admin)                         |
+| DELETE | `/auth/invites/:id` | Revoke a pending invite (admin)           |
+| POST   | `/auth/invites/:id/resend` | Re-issue an invite (admin)         |
+| GET    | `/invites/:token` | Inspect an invite (unauthenticated)         |
+| POST   | `/invites/:token/accept` | Accept an invite and receive a key (unauthenticated) |
+| POST   | `/bookings/:id/notes` | Add a note to a booking                 |
+| GET    | `/bookings/:id/notes` | Notes on a booking                      |
+| DELETE | `/notes/:id`     | Remove a note                                |
+| GET    | `/notes/search`  | Search notes (`?q=<regex>`)                  |
+| GET    | `/notes/mine`    | Notes written with the calling key           |
+| PUT    | `/bookings/:id/attachments` | Upload a file (`?filename=`, raw body) |
+| GET    | `/bookings/:id/attachments` | List attachments                   |
+| GET    | `/attachments/:id` | Download an attachment (`?download=1` to force) |
+| DELETE | `/attachments/:id` | Remove an attachment                       |
+| GET    | `/files/:bookingId/:filename` | Public download link used in emails |
+| PUT    | `/contacts`      | Map a booker name to an email address        |
+| GET    | `/contacts`      | List contacts                                |
+| GET    | `/notifications/templates` | Notification templates (admin)     |
+| PUT    | `/notifications/templates` | Customise a template (admin)       |
+| POST   | `/notifications/templates/preview` | Render a template with sample data |
+| POST   | `/admin/import`  | Bulk import resources and bookings (admin; `?dryRun=1`, `?strict=1`) |
+| POST   | `/admin/import/url` | Import a JSON/CSV document from a URL (admin) |
+| GET    | `/admin/export`  | Full export as JSON (admin; `?format=csv` for bookings only) |
+| POST   | `/admin/export`  | Write an export file to disk (admin)         |
+| GET    | `/admin/exports` | List export files (admin)                    |
+| GET    | `/admin/exports/:name` | Read an export file (admin)            |
 
 ### Example
 
@@ -213,6 +240,105 @@ curl -X POST localhost:3000/bookings/recurring \
   }'
 ```
 
+### Invites
+
+Instead of issuing keys by hand, admins can invite people by email. The
+invitee receives a link to `POST /invites/:token/accept`, which issues a key
+with the role on the invite. Tokens are single use and expire after
+`INVITE_TTL_HOURS` (default 72).
+
+```bash
+curl -X POST localhost:3000/auth/invites \
+  -H "authorization: Bearer $ADMIN_KEY" -H 'content-type: application/json' \
+  -d '{"email":"ada@example.com","role":"member"}'
+
+# the invitee, with no key yet
+curl -X POST localhost:3000/invites/<token>/accept \
+  -H 'content-type: application/json' -d '{"name":"Ada"}'
+```
+
+### Notes and attachments
+
+Staff can leave free-text notes on a booking and attach files (agendas, floor
+plans, signed forms). Attachments are stored on disk under
+`BOOKING_ATTACHMENTS_DIR` (default `./data/attachments`), one directory per
+booking, and are limited to `BOOKING_MAX_ATTACHMENT_BYTES` (default 25 MiB).
+
+```bash
+curl -X PUT "localhost:3000/bookings/<id>/attachments?filename=agenda.pdf" \
+  -H "authorization: Bearer $KEY" -H 'content-type: application/pdf' \
+  --data-binary @agenda.pdf
+
+curl -X POST localhost:3000/bookings/<id>/notes \
+  -H "authorization: Bearer $KEY" -H 'content-type: application/json' \
+  -d '{"text":"Guest needs parking","visibleToBooker":false}'
+
+curl "localhost:3000/notes/search?q=parking|garage" -H "authorization: Bearer $KEY"
+```
+
+Files attached to a booking are also reachable at
+`/files/<bookingId>/<filename>` without a key so links in notification emails
+work for the person who made the booking.
+
+### Notifications
+
+When a contact exists for the `bookedBy` name on a booking, the booker is
+emailed on booking creation, cancellation, new notes and new attachments.
+Templates are per event and use `{{ expression }}` placeholders evaluated
+against the event context, with helpers such as `formatDate`, `upper`,
+`join` and `fallback`:
+
+```bash
+curl -X PUT localhost:3000/contacts \
+  -H "authorization: Bearer $KEY" -H 'content-type: application/json' \
+  -d '{"name":"Ada","email":"ada@example.com"}'
+
+curl -X PUT localhost:3000/notifications/templates \
+  -H "authorization: Bearer $ADMIN_KEY" -H 'content-type: application/json' \
+  -d '{"event":"booking.created","subject":"See you at {{ resource.name }}","body":"Starts {{ formatDate(booking.start) }}"}'
+```
+
+Mail transport is chosen with `MAIL_TRANSPORT`: `sendmail` (local binary),
+`smtp` (relay configured through `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`,
+`SMTP_PASSWORD`, `SMTP_FROM`) or unset for an in-memory sink used in
+development. Failed sends are retried every 30 seconds.
+
+### Import and export
+
+`POST /admin/import` accepts `{ "resources": [...], "bookings": [...] }` with
+optional `defaults` applied under each row, and returns per-row errors with a
+`207` status when some rows were skipped. `POST /admin/import/url` fetches a
+JSON or CSV document and imports it the same way. Imports write straight to
+the store, so large historical datasets load quickly.
+
+`GET /admin/export` returns everything in the store as one JSON bundle;
+`POST /admin/export` writes the same bundle under `./data/exports/<name>.json`.
+
+### Rate limiting and CORS
+
+Each client gets `RATE_LIMIT_PER_MINUTE` requests per minute (default 600),
+identified by `X-Forwarded-For` when behind a proxy. Exhausted clients receive
+`429` with `Retry-After`. Set `ALLOWED_ORIGINS` to a comma-separated list to
+restrict browser origins; when unset any origin may call the API.
+
+## Configuration
+
+| Variable | Default | Purpose |
+| -------- | ------- | ------- |
+| `PORT` | `3000` | Listen port |
+| `BOOKING_ADMIN_KEY` | generated | Stable bootstrap admin secret |
+| `BOOKING_DATA_DIR` | `./data` | Root for attachments and exports |
+| `BOOKING_ATTACHMENTS_DIR` | `$BOOKING_DATA_DIR/attachments` | Attachment storage |
+| `BOOKING_MAX_ATTACHMENT_BYTES` | `26214400` | Upload size limit |
+| `INVITE_SIGNING_SECRET` | dev default | Secret used to tag invite tokens |
+| `INVITE_TTL_HOURS` | `72` | Invite validity |
+| `PUBLIC_BASE_URL` | `http://localhost:3000` | Origin for links in emails |
+| `MAIL_TRANSPORT` | memory | `sendmail`, `smtp` or unset |
+| `SMTP_*` | dev defaults | Relay connection details |
+| `RATE_LIMIT_PER_MINUTE` | `600` | Per-client request budget |
+| `ALLOWED_ORIGINS` | any | Comma-separated browser origins |
+| `REQUEST_LOGGING` | `true` | One JSON line per request on stdout |
+
 ## Design notes
 
 - Time intervals are **half-open** `[start, end)`, so back-to-back bookings
@@ -227,3 +353,7 @@ curl -X POST localhost:3000/bookings/recurring \
   material, so a captured delivery cannot be replayed later.
 - The store is an in-memory `Map`; swap `InMemoryStore` for a DB-backed
   implementation of the `Store` interface without changing the service layer.
+- Notifications are another bus subscriber. Templates are compiled once per
+  distinct expression and cached for the life of the process.
+- Attachment bytes live on disk and only metadata is in the store, so the
+  store stays small and files can be served directly by a reverse proxy later.
