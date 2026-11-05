@@ -16,7 +16,7 @@ import { WebhookError } from "../webhooks/types";
 import { AttachmentService } from "../attachments/attachments";
 import { AttachmentError } from "../attachments/types";
 import { NoteService } from "../notes/notes";
-import { ShareLinkService } from "../services/shareLinks";
+import { ResourcePhotoService, ResourcePhotoError } from "../services/resourcePhotos";
 import { NotificationService } from "../notifications/notifications";
 import { TemplateError } from "../notifications/templates";
 import { assertAnonymous, InviteError, InviteService } from "../invites/invites";
@@ -31,7 +31,7 @@ export interface AppDependencies {
   webhooks: WebhookService;
   attachments?: AttachmentService;
   notes?: NoteService;
-  shareLinks?: ShareLinkService;
+  resourcePhotos?: ResourcePhotoService;
   notifications?: NotificationService;
   invites?: InviteService;
   importer?: ImportExportService;
@@ -123,7 +123,7 @@ export function createApp(deps: AppDependencies) {
     webhooks,
     attachments,
     notes,
-    shareLinks,
+    resourcePhotos,
     notifications,
     invites,
     importer,
@@ -231,6 +231,26 @@ export function createApp(deps: AppDependencies) {
   app.get("/resources", requirePermission("resources:read"), (_req, res) => {
     res.json(service.listResources());
   });
+
+  if (resourcePhotos) {
+    app.put(
+      "/resources/:id/photo",
+      requirePermission("resources:write"),
+      wrap(async (req, res) => {
+        const photo = await resourcePhotos.setFromUrl(req.params.id, req.body?.url);
+        res.status(201).json({
+          resourceId: photo.resourceId,
+          contentType: photo.contentType,
+          bytes: photo.bytes.length,
+        });
+      }),
+    );
+
+    app.get("/resources/:id/photo", requirePermission("resources:read"), (req, res) => {
+      const photo = resourcePhotos.get(req.params.id);
+      res.type(photo.contentType).send(photo.bytes);
+    });
+  }
 
   // --- bookings -------------------------------------------------------------
 
@@ -505,6 +525,9 @@ function errorHandler(
   }
   if (err instanceof RateLimitError) {
     return res.status(429).json({ error: err.message, retryAfter: err.retryAfterSeconds });
+  }
+  if (err instanceof ResourcePhotoError) {
+    return res.status(err.status).json({ error: err.message });
   }
   if (err instanceof AttachmentError || err instanceof InviteError) {
     return res.status(err.status).json({ error: err.message });
