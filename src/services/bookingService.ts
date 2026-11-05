@@ -181,11 +181,12 @@ export class BookingService {
     }
 
     const seriesId = randomUUID();
-    const bookings = occurrences.map((occ) => {
+    const preparedBookings = occurrences.map((occ) => {
       const booking = this.buildBooking(resource, bookedBy, occ, actor, input.private === true);
       booking.seriesId = seriesId;
-      return this.store.addBooking(booking);
+      return booking;
     });
+    const bookings = preparedBookings.map((booking) => this.store.addBooking(booking));
 
     this.bus.publish({ type: "booking.series.created", seriesId, bookings }, actor);
     return { seriesId, bookings };

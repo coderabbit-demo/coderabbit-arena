@@ -5,6 +5,7 @@ import { ValidationError } from "../domain/time";
 import { Actor, ForbiddenError } from "../auth/types";
 import { EventBus } from "../events/bus";
 import { EventEnvelope } from "../events/types";
+import { RecurrenceError } from "../recurrence/types";
 
 const admin: Actor = { keyId: "key-admin", name: "Admin", role: "admin" };
 const member: Actor = { keyId: "key-member", name: "Member", role: "member" };
@@ -144,6 +145,38 @@ describe("createRecurringBooking", () => {
     }, admin);
 
     expect(ctx.service.listBookings(admin, ctx.room.id)).toHaveLength(2);
+  });
+
+  it.each([
+    { start: "2026-08-03T09:00:00Z", end: "2026-08-03T10:00:00Z", rule: { frequency: "daily" as const, interval: 100000000, count: 2 } },
+    { start: "2026-08-03T09:00:00Z", end: "2026-08-03T10:00:00Z", rule: { frequency: "weekly" as const, interval: 100000000, count: 2 } },
+    { start: "+275760-09-11T23:00:00Z", end: "+275760-09-12T01:00:00Z", rule: { frequency: "daily" as const, interval: 1, count: 2 } },
+  ])("rejects a series with an invalid generated timestamp", (input) => {
+    ctx.published.length = 0;
+    expect(() => ctx.service.createRecurringBooking({
+      resourceId: ctx.room.id,
+      bookedBy: "Ada",
+      ...input,
+    }, member)).toThrow(RecurrenceError);
+    expect(ctx.store.listBookings()).toEqual([]);
+    expect(ctx.published).toEqual([]);
+  });
+
+  it("builds every booking before persisting if the clock fails", () => {
+    let calls = 0;
+    const service = new BookingService(ctx.store, ctx.bus, () =>
+      ++calls === 2 ? new Date(NaN) : new Date("2026-01-01T00:00:00Z"),
+    );
+    ctx.published.length = 0;
+    expect(() => service.createRecurringBooking({
+      resourceId: ctx.room.id,
+      bookedBy: "Ada",
+      start: "2026-08-03T09:00:00Z",
+      end: "2026-08-03T10:00:00Z",
+      rule: { frequency: "daily", interval: 1, count: 2 },
+    }, member)).toThrow(RangeError);
+    expect(ctx.store.listBookings()).toEqual([]);
+    expect(ctx.published).toEqual([]);
   });
 
   it("rejects the whole series when one occurrence conflicts", () => {
