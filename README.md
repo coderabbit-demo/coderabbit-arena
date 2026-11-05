@@ -107,7 +107,7 @@ curl -X POST localhost:3000/auth/keys/$KEY_ID/rotate -H "authorization: Bearer $
 | POST   | `/bookings`      | Create a booking (rejects conflicts)         |
 | POST   | `/bookings/recurring` | Create a recurring booking series       |
 | GET    | `/bookings`      | List bookings, paginated (`?resourceId=`, `limit`, `cursor`) |
-| PATCH  | `/bookings/:id`  | Edit a booking (`bookedBy`, `start`, `end`, `private`) |
+| GET    | `/bookings/search` | Search bookings by booker name (`?q=<regex>`) |
 | DELETE | `/bookings/:id`  | Cancel a booking                             |
 | POST   | `/bookings/:id/share` | Create a public read-only share link for a booking |
 | GET    | `/shared/:token` | View a shared booking (unauthenticated)      |
