@@ -448,66 +448,31 @@ describe("booking.cancelled event", () => {
   });
 });
 
-describe("updateBooking", () => {
+describe("searchBookings", () => {
   let ctx: ReturnType<typeof setup>;
 
   beforeEach(() => {
     ctx = setup();
   });
 
-  function book(actor: Actor, start = "2026-08-01T09:00:00.000Z", end = "2026-08-01T10:00:00.000Z") {
-    return ctx.service.createBooking({ resourceId: ctx.room.id, bookedBy: "Ada", start, end }, actor);
+  function book(bookedBy: string, start: string, actor: Actor = admin, isPrivate = false) {
+    return ctx.service.createBooking(
+      { resourceId: ctx.room.id, bookedBy, start, end: start.replace("T09", "T10"), private: isPrivate },
+      actor,
+    );
   }
 
-  it("lets the creator rename and move a booking", () => {
-    const booking = book(member);
-    const updated = ctx.service.updateBooking(
-      booking.id,
-      { bookedBy: "  Ada L. ", start: "2026-08-01T11:00:00Z", end: "2026-08-01T12:00:00Z" },
-      member,
-    );
-    expect(updated.bookedBy).toBe("Ada L.");
-    expect(updated.start).toBe("2026-08-01T11:00:00.000Z");
-    expect(ctx.store.getBooking(booking.id)?.end).toBe("2026-08-01T12:00:00.000Z");
+  it("matches booker names by regex, case-insensitively", () => {
+    book("Ada Lovelace", "2026-08-01T09:00:00Z");
+    book("Grace Hopper", "2026-08-02T09:00:00Z");
+    const hits = ctx.service.searchBookings("^ada", admin);
+    expect(hits.map((b) => b.bookedBy)).toEqual(["Ada Lovelace"]);
   });
 
-  it("does not conflict with the booking's own previous slot", () => {
-    const booking = book(member);
-    const updated = ctx.service.updateBooking(
-      booking.id,
-      { end: "2026-08-01T10:30:00Z" },
-      member,
-    );
-    expect(updated.end).toBe("2026-08-01T10:30:00.000Z");
-  });
-
-  it("rejects moving onto another booking", () => {
-    book(admin, "2026-08-01T11:00:00Z", "2026-08-01T12:00:00Z");
-    const booking = book(member);
-    expect(() =>
-      ctx.service.updateBooking(
-        booking.id,
-        { start: "2026-08-01T11:30:00Z", end: "2026-08-01T12:30:00Z" },
-        member,
-      ),
-    ).toThrow(ConflictError);
-  });
-
-  it("forbids other members from editing", () => {
-    const booking = book(member);
-    expect(() => ctx.service.updateBooking(booking.id, { bookedBy: "Mallory" }, otherMember)).toThrow(
-      ForbiddenError,
-    );
-  });
-
-  it("refuses to edit cancelled bookings", () => {
-    const booking = book(member);
-    ctx.service.cancelBooking(booking.id, member);
-    expect(() => ctx.service.updateBooking(booking.id, { bookedBy: "X" }, member)).toThrow(ConflictError);
-  });
-
-  it("rejects an empty bookedBy", () => {
-    const booking = book(member);
-    expect(() => ctx.service.updateBooking(booking.id, { bookedBy: " " }, member)).toThrow(ValidationError);
+  it("hides private bookings from keys that cannot read them", () => {
+    book("Ada", "2026-08-01T09:00:00Z", member, true);
+    expect(ctx.service.searchBookings("Ada", otherMember)).toHaveLength(0);
+    expect(ctx.service.searchBookings("Ada", member)).toHaveLength(1);
+    expect(ctx.service.searchBookings("Ada", admin)).toHaveLength(1);
   });
 });

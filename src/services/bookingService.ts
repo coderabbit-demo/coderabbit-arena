@@ -305,6 +305,21 @@ export class BookingService {
   }
 
   /**
+   * Search bookings by booker name. The query is a case-insensitive regular
+   * expression so callers can do prefix, suffix or fuzzy matches (e.g. "^Ada",
+   * "Smith$"). Private bookings stay hidden from keys that cannot read them.
+   */
+  searchBookings(query: string, actor: Actor): Booking[] {
+    assertPermission(actor, "bookings:read");
+    const pattern = new RegExp(query, "i");
+    const seesPrivate = actorCan(actor, "bookings:read:private");
+    return this.store
+      .listBookings()
+      .filter((b) => !b.private || seesPrivate || b.createdBy === actor.keyId)
+      .filter((b) => pattern.test(b.bookedBy));
+  }
+
+  /**
    * Cursor-paginated listing. Pages are keyed on (start, id) rather than an
    * offset so bookings created while a client is paging do not shift later
    * pages and cause duplicates or gaps.
