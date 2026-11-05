@@ -447,3 +447,67 @@ describe("booking.cancelled event", () => {
     });
   });
 });
+
+describe("updateBooking", () => {
+  let ctx: ReturnType<typeof setup>;
+
+  beforeEach(() => {
+    ctx = setup();
+  });
+
+  function book(actor: Actor, start = "2026-08-01T09:00:00.000Z", end = "2026-08-01T10:00:00.000Z") {
+    return ctx.service.createBooking({ resourceId: ctx.room.id, bookedBy: "Ada", start, end }, actor);
+  }
+
+  it("lets the creator rename and move a booking", () => {
+    const booking = book(member);
+    const updated = ctx.service.updateBooking(
+      booking.id,
+      { bookedBy: "  Ada L. ", start: "2026-08-01T11:00:00Z", end: "2026-08-01T12:00:00Z" },
+      member,
+    );
+    expect(updated.bookedBy).toBe("Ada L.");
+    expect(updated.start).toBe("2026-08-01T11:00:00.000Z");
+    expect(ctx.store.getBooking(booking.id)?.end).toBe("2026-08-01T12:00:00.000Z");
+  });
+
+  it("does not conflict with the booking's own previous slot", () => {
+    const booking = book(member);
+    const updated = ctx.service.updateBooking(
+      booking.id,
+      { end: "2026-08-01T10:30:00Z" },
+      member,
+    );
+    expect(updated.end).toBe("2026-08-01T10:30:00.000Z");
+  });
+
+  it("rejects moving onto another booking", () => {
+    book(admin, "2026-08-01T11:00:00Z", "2026-08-01T12:00:00Z");
+    const booking = book(member);
+    expect(() =>
+      ctx.service.updateBooking(
+        booking.id,
+        { start: "2026-08-01T11:30:00Z", end: "2026-08-01T12:30:00Z" },
+        member,
+      ),
+    ).toThrow(ConflictError);
+  });
+
+  it("forbids other members from editing", () => {
+    const booking = book(member);
+    expect(() => ctx.service.updateBooking(booking.id, { bookedBy: "Mallory" }, otherMember)).toThrow(
+      ForbiddenError,
+    );
+  });
+
+  it("refuses to edit cancelled bookings", () => {
+    const booking = book(member);
+    ctx.service.cancelBooking(booking.id, member);
+    expect(() => ctx.service.updateBooking(booking.id, { bookedBy: "X" }, member)).toThrow(ConflictError);
+  });
+
+  it("rejects an empty bookedBy", () => {
+    const booking = book(member);
+    expect(() => ctx.service.updateBooking(booking.id, { bookedBy: " " }, member)).toThrow(ValidationError);
+  });
+});
