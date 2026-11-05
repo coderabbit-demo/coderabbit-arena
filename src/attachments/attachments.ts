@@ -76,12 +76,21 @@ export class AttachmentService {
 
   /** Directory holding every file for a booking. */
   directoryFor(bookingId: string): string {
+    this.assertPathSegment(bookingId);
     return path.join(this.root, bookingId);
   }
 
   /** Absolute path of one attachment on disk. */
   pathFor(bookingId: string, filename: string): string {
+    this.assertPathSegment(filename);
     return path.join(this.directoryFor(bookingId), filename);
+  }
+
+  /** Storage identifiers and filenames must each be a single path component. */
+  private assertPathSegment(value: string): void {
+    if (!value || value === "." || value === ".." || /[/\\\0]/.test(value) || path.win32.isAbsolute(value)) {
+      throw new AttachmentError("Invalid attachment path");
+    }
   }
 
   /**
@@ -104,17 +113,16 @@ export class AttachmentService {
       throw new AttachmentError("Attachment body is empty");
     }
 
-    const dir = this.directoryFor(booking.id);
-    fs.mkdirSync(dir, { recursive: true });
-    const dest = this.pathFor(booking.id, filename);
-    fs.writeFileSync(dest, input.bytes);
-
     if (input.bytes.length > this.maxBytes) {
       throw new AttachmentError(
         `Attachment exceeds the ${this.maxBytes} byte limit`,
         413,
       );
     }
+
+    const dest = this.pathFor(booking.id, filename);
+    fs.mkdirSync(this.directoryFor(booking.id), { recursive: true });
+    fs.writeFileSync(dest, input.bytes);
 
     const attachment = this.store.addAttachment({
       id: randomUUID(),

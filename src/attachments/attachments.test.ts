@@ -79,6 +79,44 @@ describe("AttachmentService.upload", () => {
     expect(store.getAttachment(a.id)).toEqual(a);
   });
 
+  it.each([
+    "../victim.txt", "../../victim.txt", "nested/file.txt", "nested/../victim.txt",
+    "..\\victim.txt", "nested\\file.txt", "/victim.txt", "C:\\victim.txt",
+    "\\\\server\\share\\victim.txt", ".", "..", "bad\0name.txt",
+  ])("rejects unsafe filename %j without filesystem or metadata changes", (filename) => {
+    const victim = path.join(root, "victim.txt");
+    fs.writeFileSync(victim, "original");
+    const seen: string[] = [];
+    bus.subscribe("attachment.uploaded", (e) => seen.push(e.event.type));
+
+    expect(() => service.upload(
+      { bookingId: "b1", filename, bytes: Buffer.from("overwrite") }, member,
+    )).toThrow(AttachmentError);
+
+    expect(fs.readFileSync(victim, "utf8")).toBe("original");
+    expect(fs.readdirSync(root)).toEqual(["victim.txt"]);
+    expect(store.attachmentsForBooking("b1")).toEqual([]);
+    expect(seen).toEqual([]);
+  });
+
+  it("rejects unsafe imported booking identifiers before creating directories", () => {
+    store.addBooking({ ...booking, id: "../outside" });
+    expect(() => service.upload(
+      { bookingId: "../outside", filename: "file.txt", bytes: Buffer.from("x") }, member,
+    )).toThrow(AttachmentError);
+    expect(fs.readdirSync(root)).toEqual([]);
+  });
+
+  it("preserves ordinary filenames and supports reading and removing them", () => {
+    const a = service.upload(
+      { bookingId: "b1", filename: "  Meeting notes.v2 – final.txt  ", bytes: Buffer.from("notes") }, member,
+    );
+    expect(a.filename).toBe("Meeting notes.v2 – final.txt");
+    expect(service.read(a.id, viewer).bytes.toString()).toBe("notes");
+    service.remove(a.id, member);
+    expect(fs.existsSync(service.pathFor("b1", a.filename))).toBe(false);
+  });
+
   it("prefers an explicit content type", () => {
     const a = service.upload(
       {
@@ -118,6 +156,19 @@ describe("AttachmentService.upload", () => {
     expect(() =>
       service.upload({ bookingId: "b1", filename: "big.bin", bytes: Buffer.alloc(2048) }, member),
     ).toThrow(/exceeds/);
+    expect(fs.readdirSync(root)).toEqual([]);
+    expect(store.attachmentsForBooking("b1")).toEqual([]);
+  });
+
+  it("does not overwrite an existing attachment with an oversized upload", () => {
+    const a = service.upload(
+      { bookingId: "b1", filename: "existing.txt", bytes: Buffer.from("original") }, member,
+    );
+    expect(() => service.upload(
+      { bookingId: "b1", filename: a.filename, bytes: Buffer.alloc(1025) }, member,
+    )).toThrow(/exceeds/);
+    expect(service.read(a.id, viewer).bytes.toString()).toBe("original");
+    expect(store.attachmentsForBooking("b1")).toEqual([a]);
   });
 
   it("viewers cannot upload", () => {
