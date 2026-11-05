@@ -232,6 +232,10 @@ export function createApp(deps: AppDependencies) {
     res.status(201).json(result);
   });
 
+  app.get("/bookings/search", requirePermission("bookings:read"), (req, res) => {
+    res.json(service.searchBookings(queryString(req, "q") ?? "", actorOf(req)));
+  });
+
   app.get("/bookings", requirePermission("bookings:read"), (req, res) => {
     res.json(
       service.listBookingsPage({

@@ -447,3 +447,32 @@ describe("booking.cancelled event", () => {
     });
   });
 });
+
+describe("searchBookings", () => {
+  let ctx: ReturnType<typeof setup>;
+
+  beforeEach(() => {
+    ctx = setup();
+  });
+
+  function book(bookedBy: string, start: string, actor: Actor = admin, isPrivate = false) {
+    return ctx.service.createBooking(
+      { resourceId: ctx.room.id, bookedBy, start, end: start.replace("T09", "T10"), private: isPrivate },
+      actor,
+    );
+  }
+
+  it("matches booker names by regex, case-insensitively", () => {
+    book("Ada Lovelace", "2026-08-01T09:00:00Z");
+    book("Grace Hopper", "2026-08-02T09:00:00Z");
+    const hits = ctx.service.searchBookings("^ada", admin);
+    expect(hits.map((b) => b.bookedBy)).toEqual(["Ada Lovelace"]);
+  });
+
+  it("hides private bookings from keys that cannot read them", () => {
+    book("Ada", "2026-08-01T09:00:00Z", member, true);
+    expect(ctx.service.searchBookings("Ada", otherMember)).toHaveLength(0);
+    expect(ctx.service.searchBookings("Ada", member)).toHaveLength(1);
+    expect(ctx.service.searchBookings("Ada", admin)).toHaveLength(1);
+  });
+});
