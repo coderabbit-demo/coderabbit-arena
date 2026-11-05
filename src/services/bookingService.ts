@@ -7,6 +7,7 @@ import {
   CreateResourceInput,
   Resource,
   TimeRange,
+  UpdateBookingInput,
 } from "../domain/types";
 import { expand } from "../recurrence/recurrence";
 import { RecurrenceRule } from "../recurrence/types";
@@ -244,6 +245,52 @@ export class BookingService {
   }
 
   /**
+   * Edit a booking in place: rename it, move it, or change its visibility.
+   * Same ownership rule as cancelling: the creator, or a key that may manage
+   * any booking. A new time range is re-checked for conflicts.
+   */
+  updateBooking(id: string, input: UpdateBookingInput, actor: Actor): Booking {
+    assertPermission(actor, "bookings:write");
+
+    const booking = this.store.getBooking(id);
+    if (!booking) {
+      throw new NotFoundError(`Booking not found: ${id}`);
+    }
+    if (
+      booking.createdBy !== actor.keyId &&
+      !actorCan(actor, "bookings:cancel:any")
+    ) {
+      throw new ForbiddenError("Only the creator or an admin may edit this booking");
+    }
+    if (booking.status === "cancelled") {
+      throw new ConflictError("Cancelled bookings cannot be edited");
+    }
+
+    const updated: Booking = { ...booking, ...input, id: booking.id };
+
+    if (input.bookedBy !== undefined) {
+      const bookedBy = input.bookedBy.trim();
+      if (!bookedBy) {
+        throw new ValidationError("bookedBy must not be empty");
+      }
+      updated.bookedBy = bookedBy;
+    }
+
+    if (input.start !== undefined || input.end !== undefined) {
+      const range = parseRange(updated.start, updated.end);
+      const resource = this.store.getResource(booking.resourceId);
+      if (!resource) {
+        throw new NotFoundError(`Resource not found: ${booking.resourceId}`);
+      }
+      this.assertAvailable(resource, range, [], booking.id);
+      updated.start = range.start.toISOString();
+      updated.end = range.end.toISOString();
+    }
+
+    return this.store.updateBooking(updated);
+  }
+
+  /**
    * List bookings visible to `actor`. Private bookings are only returned to
    * the key that created them and to keys allowed to read private bookings.
    */
@@ -299,9 +346,11 @@ export class BookingService {
     resource: Resource,
     range: TimeRange,
     siblings: TimeRange[] = [],
+    ignoreBookingId?: string,
   ): void {
     const existing = this.store
       .bookingsForResource(resource.id, true)
+      .filter((b) => b.id !== ignoreBookingId)
       .filter((b) => overlaps(range, parseRange(b.start, b.end)));
 
     const overlappingSiblings = siblings.filter(
