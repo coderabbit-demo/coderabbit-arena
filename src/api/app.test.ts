@@ -15,6 +15,7 @@ let adminSecret: string;
 let memberSecret: string;
 let viewerSecret: string;
 let apiKeys: ApiKeyService;
+let store: InMemoryStore;
 let webhooks: WebhookService;
 let posted: Array<{ url: string; body: string }>;
 
@@ -47,7 +48,7 @@ async function call(
 
 beforeAll(async () => {
   vi.stubEnv("CALENDAR_SYNC_TOKEN", "configured-calendar-sync-test-token");
-  const store = new InMemoryStore();
+  store = new InMemoryStore();
   const bus = new EventBus();
   const audit = new AuditLog(store, bus);
   apiKeys = new ApiKeyService(store, bus);
@@ -182,6 +183,43 @@ describe("bookings end to end", () => {
     });
     expect(res.status).toBe(201);
     roomId = res.json.id;
+  });
+
+  it("rejects an invalid recurring series without bookings or an audit event", async () => {
+    const before = await call("GET", "/audit?action=booking.series.created", { token: adminSecret });
+    const res = await call("POST", "/bookings/recurring", {
+      token: memberSecret,
+      body: {
+        resourceId: roomId,
+        bookedBy: "Ada",
+        start: "2026-08-03T09:00:00Z",
+        end: "2026-08-03T10:00:00Z",
+        rule: { frequency: "daily", interval: 100000000, count: 2 },
+      },
+    });
+    expect(res.status).toBe(400);
+    expect(store.bookingsForResource(roomId)).toEqual([]);
+    const after = await call("GET", "/audit?action=booking.series.created", { token: adminSecret });
+    expect(after.json.total).toBe(before.json.total);
+
+    const created = await call("POST", "/bookings/recurring", {
+      token: memberSecret,
+      body: {
+        resourceId: roomId,
+        bookedBy: "Ada",
+        start: "2026-08-03T09:00:00Z",
+        end: "2026-08-03T10:00:00Z",
+        rule: { frequency: "daily", interval: 1, count: 2 },
+      },
+    });
+    expect(created.status).toBe(201);
+    expect(store.bookingsForResource(roomId)).toHaveLength(2);
+    const audit = await call("GET", `/audit?subjectId=${created.json.seriesId}`, { token: adminSecret });
+    expect(audit.json.entries).toHaveLength(1);
+    expect(audit.json.entries[0]).toMatchObject({
+      action: "booking.series.created",
+      details: { count: 2, bookingIds: created.json.bookings.map((b: { id: string }) => b.id) },
+    });
   });
 
   it("creates, lists and cancels a booking with ownership enforced", async () => {

@@ -124,7 +124,13 @@ export function expand(input: ExpandInput): Occurrence[] {
     weekly: expandWeekly,
   };
 
-  return expander[rule.frequency](input);
+  const occurrences = expander[rule.frequency](input);
+  if (occurrences.some(({ start, end }) =>
+    Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()),
+  )) {
+    throw new RecurrenceError("generated occurrence has an invalid date");
+  }
+  return occurrences;
 }
 
 /** Human-readable one-line summary of a recurrence rule, e.g. "every 2 weeks, 5 times". */
