@@ -98,6 +98,12 @@ export function summarize(event: DomainEvent): Pick<AuditEntry, "subjectType" | 
       };
     case "apikey.revoked":
       return { subjectType: "apikey", subjectId: event.keyId, details: {} };
+    case "apikey.rotated":
+      return {
+        subjectType: "apikey",
+        subjectId: event.keyId,
+        details: { graceUntil: event.graceUntil },
+      };
     case "webhook.registered":
       return {
         subjectType: "webhook",

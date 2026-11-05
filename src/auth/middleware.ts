@@ -1,5 +1,5 @@
 import { NextFunction, Request, RequestHandler, Response } from "express";
-import { ApiKeyService, hasPermission, parseAuthorizationHeader } from "./apiKeys";
+import { ApiKeyService, actorCan, parseAuthorizationHeader } from "./apiKeys";
 import { Actor, AuthError, ForbiddenError, Permission } from "./types";
 
 /** Express request carrying the authenticated actor, set by `authenticate`. */
@@ -7,26 +7,40 @@ export interface AuthenticatedRequest extends Request {
   actor?: Actor;
 }
 
-const CALENDAR_SYNC_ACTOR: Actor = {
-  keyId: "calendar-sync",
-  name: "calendar sync service",
-  role: "admin",
-};
+/** Alternative header for clients that cannot set Authorization (e.g. some webhooks). */
+export const API_KEY_HEADER = "x-api-key";
+/** Query parameter accepted so report links can be opened directly in a browser. */
+export const API_KEY_QUERY_PARAM = "api_key";
 
 /**
- * Resolve a configured calendar service token or bearer token and attach the
- * resulting Actor to `req.actor`. Service authentication is disabled when
- * CALENDAR_SYNC_TOKEN is unset or empty. Requests without usable credentials
- * are rejected with a 401 before reaching any route.
+ * Find the credential on a request. Bearer tokens win, then the X-Api-Key
+ * header, then the `api_key` query parameter for browser-friendly links.
+ */
+export function extractToken(req: Request): string | null {
+  const bearer = parseAuthorizationHeader(req.header("authorization"));
+  if (bearer) {
+    return bearer;
+  }
+  const header = req.header(API_KEY_HEADER);
+  if (header) {
+    return header.trim() || null;
+  }
+  const query = req.query[API_KEY_QUERY_PARAM];
+  if (typeof query === "string" && query.length > 0) {
+    return query;
+  }
+  return null;
+}
+
+/**
+ * Resolve the credential on every request and attach the resulting Actor to
+ * `req.actor`. Requests without a usable credential are rejected with a 401
+ * before reaching any route.
  */
 export function authenticate(keys: ApiKeyService): RequestHandler {
   const calendarSyncToken = process.env.CALENDAR_SYNC_TOKEN;
   return (req: AuthenticatedRequest, _res: Response, next: NextFunction) => {
-    if (calendarSyncToken && req.header("x-service-token") === calendarSyncToken) {
-      req.actor = CALENDAR_SYNC_ACTOR;
-      return next();
-    }
-    const token = parseAuthorizationHeader(req.header("authorization"));
+    const token = extractToken(req);
     if (!token) {
       return next(new AuthError("Missing or malformed Authorization header"));
     }
@@ -45,10 +59,10 @@ export function requirePermission(permission: Permission): RequestHandler {
     if (!req.actor) {
       return next(new AuthError("Request is not authenticated"));
     }
-    if (!hasPermission(req.actor.role, permission)) {
+    if (!actorCan(req.actor, permission)) {
       return next(
         new ForbiddenError(
-          `Role "${req.actor.role}" is not allowed to perform ${permission}`,
+          `Key "${req.actor.name}" (${req.actor.role}) is not allowed to perform ${permission}`,
         ),
       );
     }

@@ -61,8 +61,18 @@ export function createApp({ service, apiKeys, audit, webhooks }: AppDependencies
     res.json(apiKeys.list(actorOf(req)));
   });
 
+  app.get("/auth/keys/:id", requirePermission("keys:manage"), (req, res) => {
+    res.json(apiKeys.get(req.params.id, actorOf(req)));
+  });
+
   app.delete("/auth/keys/:id", requirePermission("keys:manage"), (req, res) => {
     res.json(apiKeys.revoke(req.params.id, actorOf(req)));
+  });
+
+  // Any key may rotate itself, so authorization lives in the service rather
+  // than in a requirePermission guard.
+  app.post("/auth/keys/:id/rotate", (req, res) => {
+    res.status(201).json(apiKeys.rotate(req.params.id, actorOf(req)));
   });
 
   // --- resources ------------------------------------------------------------

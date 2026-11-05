@@ -130,6 +130,72 @@ describe("authentication", () => {
     expect(res.json).toMatchObject({ name: "member", role: "member" });
   });
 
+  it("accepts the X-Api-Key header and api_key query parameter", async () => {
+    const header = await call("GET", "/auth/whoami", {
+      headers: { "x-api-key": memberSecret },
+    });
+    expect(header.status).toBe(200);
+    expect(header.json.role).toBe("member");
+
+    const query = await call("GET", `/auth/whoami?api_key=${memberSecret}`);
+    expect(query.status).toBe(200);
+    expect(query.json.role).toBe("member");
+  });
+
+  it("issues scoped and expiring keys and enforces the scopes", async () => {
+    const issued = await call("POST", "/auth/keys", {
+      token: adminSecret,
+      body: { name: "signage", role: "member", scopes: ["bookings:read"], expiresInDays: 30 },
+    });
+    expect(issued.status).toBe(201);
+    expect(issued.json.key.scopes).toEqual(["bookings:read"]);
+    expect(issued.json.key.expiresAt).toBeTruthy();
+
+    const me = await call("GET", "/auth/whoami", { token: issued.json.secret });
+    expect(me.json.scopes).toEqual(["bookings:read"]);
+
+    expect((await call("GET", "/bookings", { token: issued.json.secret })).status).toBe(200);
+    const denied = await call("POST", "/resources", {
+      token: issued.json.secret,
+      body: { name: "nope" },
+    });
+    expect(denied.status).toBe(403);
+
+    const tooBroad = await call("POST", "/auth/keys", {
+      token: adminSecret,
+      body: { name: "x", role: "viewer", scopes: ["keys:manage"] },
+    });
+    expect(tooBroad.status).toBe(401);
+  });
+
+  it("rotates a key and keeps the old secret working during the grace window", async () => {
+    const issued = await call("POST", "/auth/keys", {
+      token: adminSecret,
+      body: { name: "bot", role: "service" },
+    });
+    expect(issued.status).toBe(201);
+
+    const rotated = await call("POST", `/auth/keys/${issued.json.key.id}/rotate`, {
+      token: issued.json.secret,
+    });
+    expect(rotated.status).toBe(201);
+    expect(rotated.json.secret).not.toBe(issued.json.secret);
+    expect(rotated.json.key.rotatedAt).toBeTruthy();
+
+    expect((await call("GET", "/auth/whoami", { token: rotated.json.secret })).status).toBe(200);
+    expect((await call("GET", "/auth/whoami", { token: issued.json.secret })).status).toBe(200);
+
+    const denied = await call("POST", `/auth/keys/${issued.json.key.id}/rotate`, {
+      token: memberSecret,
+    });
+    expect(denied.status).toBe(403);
+
+    const fetched = await call("GET", `/auth/keys/${issued.json.key.id}`, { token: adminSecret });
+    expect(fetched.status).toBe(200);
+    expect(fetched.json.prefix).toBe(rotated.json.key.prefix);
+    expect(fetched.json.secretHash).toBeUndefined();
+  });
+
   it("rejects a revoked key", async () => {
     const issued = await call("POST", "/auth/keys", {
       token: adminSecret,
