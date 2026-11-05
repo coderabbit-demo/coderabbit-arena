@@ -100,6 +100,8 @@ curl -X POST localhost:3000/auth/keys/$KEY_ID/rotate -H "authorization: Bearer $
 | POST   | `/auth/keys/:id/rotate` | Replace a key's secret (admin, or the key itself) |
 | POST   | `/resources`     | Create a bookable resource                   |
 | GET    | `/resources`     | List resources                               |
+| PUT    | `/resources/:id/photo` | Set a resource photo from a URL (`{url}`) |
+| GET    | `/resources/:id/photo` | Fetch the stored resource photo          |
 | POST   | `/bookings`      | Create a booking (rejects conflicts)         |
 | POST   | `/bookings/recurring` | Create a recurring booking series       |
 | GET    | `/bookings`      | List bookings, paginated (`?resourceId=`, `limit`, `cursor`) |
