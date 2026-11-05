@@ -89,7 +89,13 @@ export function createApp({ service, apiKeys, audit, webhooks }: AppDependencies
   });
 
   app.get("/bookings", requirePermission("bookings:read"), (req, res) => {
-    res.json(service.listBookings(actorOf(req), queryString(req, "resourceId")));
+    res.json(
+      service.listBookingsPage({
+        resourceId: queryString(req, "resourceId"),
+        limit: queryNumber(req, "limit"),
+        cursor: queryString(req, "cursor"),
+      }),
+    );
   });
 
   app.delete("/bookings/:id", requirePermission("bookings:write"), (req, res) => {

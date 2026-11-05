@@ -199,7 +199,8 @@ describe("bookings end to end", () => {
 
     const listed = await call("GET", `/bookings?resourceId=${roomId}`, { token: viewerSecret });
     expect(listed.status).toBe(200);
-    expect(listed.json).toHaveLength(1);
+    expect(listed.json.data).toHaveLength(1);
+    expect(listed.json.nextCursor).toBeNull();
 
     // A different member cannot cancel it.
     const other = await call("POST", "/auth/keys", {

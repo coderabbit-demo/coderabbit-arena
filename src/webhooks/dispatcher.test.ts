@@ -124,6 +124,7 @@ describe("WebhookService delivery", () => {
 
     const ok = verifySignature({
       secret: hook.secret,
+      eventId: init.headers["x-booking-event-id"],
       timestamp: Number(init.headers[TIMESTAMP_HEADER]),
       body: init.body,
       signature: init.headers[SIGNATURE_HEADER],
