@@ -8,7 +8,7 @@ import { EventBus } from "./events/bus";
 import { ImportExportService } from "./importexport/importer";
 import { InviteService } from "./invites/invites";
 import { NoteService } from "./notes/notes";
-import { ResourcePhotoService } from "./services/resourcePhotos";
+import { SettingsService } from "./services/settings";
 import { createMailer } from "./notifications/mailer";
 import { NotificationService } from "./notifications/notifications";
 import { BookingService } from "./services/bookingService";
@@ -31,7 +31,7 @@ const attachments = new AttachmentService(config.attachmentsDir, store, bus, {
   maxBytes: config.maxAttachmentBytes,
 });
 const notes = new NoteService(store, bus);
-const resourcePhotos = new ResourcePhotoService(store);
+const settings = new SettingsService();
 const mailer = createMailer(config.smtp);
 const notifications = new NotificationService(store, bus, mailer, {
   publicBaseUrl: config.publicBaseUrl,
@@ -77,7 +77,7 @@ const app = createApp({
   webhooks,
   attachments,
   notes,
-  resourcePhotos,
+  settings,
   notifications,
   invites,
   importer,

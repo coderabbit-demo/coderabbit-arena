@@ -97,6 +97,8 @@ curl -X POST localhost:3000/auth/keys/$KEY_ID/rotate -H "authorization: Bearer $
 | ------ | ---------------- | -------------------------------------------- |
 | GET    | `/health`        | Liveness check (unauthenticated)             |
 | GET    | `/auth/whoami`   | The key id, name and role of the caller      |
+| GET    | `/settings`      | Read application settings                    |
+| PUT    | `/settings`      | Update application settings (admin; partial) |
 | POST   | `/auth/keys`     | Issue an API key (admin)                     |
 | GET    | `/auth/keys`     | List keys without secrets (admin)            |
 | GET    | `/auth/keys/:id` | One key without its secret (admin)           |
