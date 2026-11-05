@@ -51,6 +51,14 @@ export interface CreateBookingInput {
   private?: boolean;
 }
 
+/** Fields a booking's owner may change after it was created. */
+export interface UpdateBookingInput {
+  bookedBy?: string;
+  start?: string;
+  end?: string;
+  private?: boolean;
+}
+
 /** A closed-open time interval used for availability math. */
 export interface TimeRange {
   start: Date;
