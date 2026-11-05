@@ -5,7 +5,7 @@ import { RecurrenceError } from "../recurrence/types";
 import { ReportError } from "../reports/types";
 import { reportToCsv } from "../reports/csv";
 import { reportToMarkdown } from "../reports/markdown";
-import { reportToPdf } from "../reports/pdf";
+import { bookingsToIcs } from "../reports/ics";
 import { ApiKeyService } from "../auth/apiKeys";
 import { actorOf, authenticate, AuthenticatedRequest, requirePermission } from "../auth/middleware";
 import { AuthError, ForbiddenError } from "../auth/types";
