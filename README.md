@@ -102,7 +102,7 @@ curl -X POST localhost:3000/auth/keys/$KEY_ID/rotate -H "authorization: Bearer $
 | GET    | `/resources`     | List resources                               |
 | POST   | `/bookings`      | Create a booking (rejects conflicts)         |
 | POST   | `/bookings/recurring` | Create a recurring booking series       |
-| GET    | `/bookings`      | List bookings (`?resourceId=` to filter)     |
+| GET    | `/bookings`      | List bookings, paginated (`?resourceId=`, `limit`, `cursor`) |
 | DELETE | `/bookings/:id`  | Cancel a booking                             |
 | GET    | `/reports/utilization` | Utilization report (`?from=&to=`, `&format=csv\|md`) |
 | GET    | `/audit`         | Audit log (admin; filter by `action`, `actorKeyId`, `subjectId`, `from`, `to`; paginate with `limit`, `offset`) |
@@ -124,6 +124,9 @@ curl -X POST localhost:3000/bookings \
   -H "authorization: Bearer $KEY" -H 'content-type: application/json' \
   -d '{"resourceId":"<id>","bookedBy":"Ada","start":"2026-08-01T09:00:00Z","end":"2026-08-01T10:00:00Z"}'
 ```
+
+Pass `"private": true` to keep a booking (an interview, a 1:1) out of other
+keys' listings.
 
 ### Audit log
 
@@ -147,7 +150,7 @@ with three headers:
 | ---------------------- | ---------------------------------------------------- |
 | `x-booking-event-id`   | Unique id of the event; use it to de-duplicate       |
 | `x-booking-timestamp`  | Unix seconds when the delivery was signed            |
-| `x-booking-signature`  | `v1=` + hex HMAC-SHA256 of `"<timestamp>.<body>"`    |
+| `x-booking-signature`  | `v2=` + hex HMAC-SHA256 of `"<event id>.<timestamp>.<body>"` |
 
 Failed deliveries (network errors, `5xx`, `408`, `429`) are retried up to three
 times with exponential backoff; other `4xx` responses fail immediately. Inspect
@@ -162,6 +165,37 @@ curl -X POST localhost:3000/webhooks \
 Receivers should verify the signature with the shared secret and reject
 deliveries whose timestamp is more than five minutes old; see
 `src/webhooks/signing.ts` for a reference `verifySignature`.
+
+Signatures moved from `v1` (`"<timestamp>.<body>"`) to `v2`, which also signs
+the event id so the id receivers de-duplicate on cannot be swapped. `v1`
+signatures are no longer sent.
+
+`booking.cancelled` events carry identifiers only:
+
+```json
+{ "type": "booking.cancelled", "bookingId": "...", "resourceId": "...",
+  "cancelledAt": "2026-08-01T08:00:00.000Z", "cancelledBy": "<key id>" }
+```
+
+Fetch the booking with `GET /bookings?resourceId=` if you need the rest.
+
+### Listing bookings
+
+`GET /bookings` returns one page at a time, ordered by `start` then `id`:
+
+```json
+{ "data": [ { "id": "...", "start": "...", "end": "...", "...": "..." } ],
+  "nextCursor": "eyJzdGFydCI6..." }
+```
+
+Pass `nextCursor` back as `cursor` to get the next page; it is `null` on the
+last page. `limit` defaults to 50 and may be at most 200. Cursors are keyed on
+the booking's position rather than an offset, so bookings created while you
+are paging do not cause duplicates or gaps.
+
+```bash
+curl "localhost:3000/bookings?resourceId=<id>&limit=100" -H "authorization: Bearer $KEY"
+```
 
 ### Recurring bookings
 

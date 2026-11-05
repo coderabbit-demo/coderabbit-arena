@@ -59,7 +59,10 @@ describe("summarize", () => {
   it("describes cancellation", () => {
     const s = summarize({
       type: "booking.cancelled",
-      booking: { ...booking, status: "cancelled", cancelledAt: "2026-07-02T00:00:00.000Z" },
+      bookingId: "b1",
+      resourceId: "r1",
+      cancelledAt: "2026-07-02T00:00:00.000Z",
+      cancelledBy: "k-admin",
     });
     expect(s.details).toEqual({ resourceId: "r1", cancelledAt: "2026-07-02T00:00:00.000Z" });
   });
@@ -119,7 +122,16 @@ describe("AuditLog", () => {
   it("filters by action, actor and subject", () => {
     bus.publish({ type: "resource.created", resource: room }, admin);
     bus.publish({ type: "booking.created", booking }, member);
-    bus.publish({ type: "booking.cancelled", booking }, admin);
+    bus.publish(
+      {
+        type: "booking.cancelled",
+        bookingId: booking.id,
+        resourceId: booking.resourceId,
+        cancelledAt: "2026-07-02T00:00:00.000Z",
+        cancelledBy: admin.keyId,
+      },
+      admin,
+    );
 
     expect(log.query({ action: "booking.created" }).total).toBe(1);
     expect(log.query({ actorKeyId: "k-admin" }).total).toBe(2);

@@ -48,6 +48,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     "resources:read",
     "resources:write",
     "bookings:read",
+    "bookings:read:private",
     "bookings:write",
     "bookings:cancel:any",
     "reports:read",

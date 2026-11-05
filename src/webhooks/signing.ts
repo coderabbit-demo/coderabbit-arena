@@ -3,25 +3,29 @@ import { createHmac, timingSafeEqual } from "crypto";
 export const SIGNATURE_HEADER = "x-booking-signature";
 export const TIMESTAMP_HEADER = "x-booking-timestamp";
 export const EVENT_ID_HEADER = "x-booking-event-id";
-export const SIGNATURE_VERSION = "v1";
+export const SIGNATURE_VERSION = "v2";
 
 /** Deliveries older than this are rejected by `verifySignature` to limit replays. */
 export const DEFAULT_TOLERANCE_SECONDS = 300;
 
 /**
  * Sign a webhook body. The timestamp is folded into the signed payload so a
- * captured delivery cannot be replayed later with the same signature.
- * Format: "v1=<hex hmac-sha256 of `${timestamp}.${body}`>".
+ * captured delivery cannot be replayed later with the same signature, and the
+ * event id is folded in so the id header receivers de-duplicate on cannot be
+ * swapped without breaking the signature.
+ * Format: "v2=<hex hmac-sha256 of `${eventId}.${timestamp}.${body}`>".
  */
-export function sign(secret: string, timestamp: number, body: string): string {
+export function sign(secret: string, eventId: string, timestamp: number, body: string): string {
   const mac = createHmac("sha256", secret)
-    .update(`${timestamp}.${body}`, "utf8")
+    .update(`${eventId}.${timestamp}.${body}`, "utf8")
     .digest("hex");
   return `${SIGNATURE_VERSION}=${mac}`;
 }
 
 export interface VerifyInput {
   secret: string;
+  /** Value of the event id header. */
+  eventId: string;
   /** Unix seconds from the timestamp header. */
   timestamp: number;
   body: string;
@@ -47,7 +51,7 @@ export function verifySignature(input: VerifyInput): boolean {
     return false;
   }
 
-  const expected = sign(input.secret, input.timestamp, input.body);
+  const expected = sign(input.secret, input.eventId, input.timestamp, input.body);
   const a = Buffer.from(expected, "utf8");
   const b = Buffer.from(input.signature, "utf8");
   if (a.length !== b.length) {

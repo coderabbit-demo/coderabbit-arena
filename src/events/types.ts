@@ -11,7 +11,18 @@ export type DomainEvent =
   | { type: "resource.created"; resource: Resource }
   | { type: "booking.created"; booking: Booking }
   | { type: "booking.series.created"; seriesId: string; bookings: Booking[] }
-  | { type: "booking.cancelled"; booking: Booking }
+  | {
+      /**
+       * Only identifiers and the cancellation stamp: consumers that need the
+       * rest of the booking can fetch it, and webhook receivers no longer get
+       * who booked what each time something is cancelled.
+       */
+      type: "booking.cancelled";
+      bookingId: string;
+      resourceId: string;
+      cancelledAt: string;
+      cancelledBy: string;
+    }
   | { type: "apikey.issued"; keyId: string; role: Role }
   | { type: "apikey.revoked"; keyId: string }
   | { type: "apikey.rotated"; keyId: string; graceUntil: string }

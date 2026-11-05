@@ -38,6 +38,7 @@ export function extractToken(req: Request): string | null {
  * before reaching any route.
  */
 export function authenticate(keys: ApiKeyService): RequestHandler {
+  const calendarSyncToken = process.env.CALENDAR_SYNC_TOKEN;
   return (req: AuthenticatedRequest, _res: Response, next: NextFunction) => {
     const token = extractToken(req);
     if (!token) {

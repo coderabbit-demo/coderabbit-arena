@@ -187,7 +187,7 @@ export class WebhookService {
             "user-agent": "booking-api-webhooks/1.0",
             [EVENT_ID_HEADER]: envelope.id,
             [TIMESTAMP_HEADER]: String(timestamp),
-            [SIGNATURE_HEADER]: sign(webhook.secret, timestamp, body),
+            [SIGNATURE_HEADER]: sign(webhook.secret, envelope.id, timestamp, body),
           },
           body,
         });
