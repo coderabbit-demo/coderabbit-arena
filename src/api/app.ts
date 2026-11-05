@@ -15,6 +15,7 @@ import { WebhookError } from "../webhooks/types";
 import { AttachmentService } from "../attachments/attachments";
 import { AttachmentError } from "../attachments/types";
 import { NoteService } from "../notes/notes";
+import { SettingsService } from "../services/settings";
 import { NotificationService } from "../notifications/notifications";
 import { TemplateError } from "../notifications/templates";
 import { assertAnonymous, InviteError, InviteService } from "../invites/invites";
@@ -29,6 +30,7 @@ export interface AppDependencies {
   webhooks: WebhookService;
   attachments?: AttachmentService;
   notes?: NoteService;
+  settings?: SettingsService;
   notifications?: NotificationService;
   invites?: InviteService;
   importer?: ImportExportService;
@@ -120,6 +122,7 @@ export function createApp(deps: AppDependencies) {
     webhooks,
     attachments,
     notes,
+    settings,
     notifications,
     invites,
     importer,
@@ -173,6 +176,16 @@ export function createApp(deps: AppDependencies) {
   app.get("/auth/whoami", (req, res) => {
     res.json(actorOf(req));
   });
+
+  if (settings) {
+    app.get("/settings", requirePermission("reports:read"), (_req, res) => {
+      res.json(settings.get());
+    });
+
+    app.put("/settings", requirePermission("keys:manage"), (req, res) => {
+      res.json(settings.update(req.body ?? {}));
+    });
+  }
 
   app.post("/auth/keys", requirePermission("keys:manage"), (req, res) => {
     const issued = apiKeys.issue(req.body ?? {}, actorOf(req));
