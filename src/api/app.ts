@@ -5,6 +5,7 @@ import { RecurrenceError } from "../recurrence/types";
 import { ReportError } from "../reports/types";
 import { reportToCsv } from "../reports/csv";
 import { reportToMarkdown } from "../reports/markdown";
+import { bookingsToIcs } from "../reports/ics";
 import { ApiKeyService } from "../auth/apiKeys";
 import { actorOf, authenticate, AuthenticatedRequest, requirePermission } from "../auth/middleware";
 import { AuthError, ForbiddenError } from "../auth/types";
@@ -15,6 +16,7 @@ import { WebhookError } from "../webhooks/types";
 import { AttachmentService } from "../attachments/attachments";
 import { AttachmentError } from "../attachments/types";
 import { NoteService } from "../notes/notes";
+import { ShareLinkService } from "../services/shareLinks";
 import { NotificationService } from "../notifications/notifications";
 import { TemplateError } from "../notifications/templates";
 import { assertAnonymous, InviteError, InviteService } from "../invites/invites";
@@ -29,6 +31,7 @@ export interface AppDependencies {
   webhooks: WebhookService;
   attachments?: AttachmentService;
   notes?: NoteService;
+  shareLinks?: ShareLinkService;
   notifications?: NotificationService;
   invites?: InviteService;
   importer?: ImportExportService;
@@ -70,7 +73,7 @@ function cors(allowedOrigins: string[]): RequestHandler {
       res.setHeader("Access-Control-Allow-Origin", origin);
       res.setHeader("Access-Control-Allow-Credentials", "true");
       res.setHeader("Access-Control-Allow-Headers", "authorization, content-type, x-filename");
-      res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
+      res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
       res.setHeader("Access-Control-Expose-Headers", "X-RateLimit-Remaining, Retry-After");
     }
     if (req.method === "OPTIONS") {
@@ -120,6 +123,7 @@ export function createApp(deps: AppDependencies) {
     webhooks,
     attachments,
     notes,
+    shareLinks,
     notifications,
     invites,
     importer,
@@ -163,6 +167,14 @@ export function createApp(deps: AppDependencies) {
       res.type(file.contentType);
       res.setHeader("Content-Disposition", `inline; filename="${req.params.filename}"`);
       res.send(file.bytes);
+    });
+  }
+
+  if (shareLinks) {
+    // A share link is pasted straight into a URL, so it is read without an API
+    // key, like the invite and file links above.
+    app.get("/shared/:token", (req, res) => {
+      res.json(shareLinks.resolve(req.params.token));
     });
   }
 
@@ -246,10 +258,20 @@ export function createApp(deps: AppDependencies) {
     );
   });
 
+  app.patch("/bookings/:id", requirePermission("bookings:write"), (req, res) => {
+    res.json(service.updateBooking(req.params.id, req.body ?? {}, actorOf(req)));
+  });
+
   app.delete("/bookings/:id", requirePermission("bookings:write"), (req, res) => {
     const booking = service.cancelBooking(req.params.id, actorOf(req));
     res.json(booking);
   });
+
+  if (shareLinks) {
+    app.post("/bookings/:id/share", requirePermission("bookings:write"), (req, res) => {
+      res.status(201).json(shareLinks.create(req.params.id));
+    });
+  }
 
   // --- notes ----------------------------------------------------------------
 
@@ -345,7 +367,7 @@ export function createApp(deps: AppDependencies) {
 
   // --- reports --------------------------------------------------------------
 
-  app.get("/reports/utilization", requirePermission("reports:read"), (req, res) => {
+  app.get("/reports/utilization", requirePermission("reports:read"), wrap(async (req, res) => {
     const report = service.utilizationReport({
       window: {
         from: queryString(req, "from") ?? "",
@@ -363,8 +385,15 @@ export function createApp(deps: AppDependencies) {
       res.type("text/markdown").send(reportToMarkdown(report));
       return;
     }
+    if (format === "pdf") {
+      const pdf = await reportToPdf(report, { title: queryString(req, "title") });
+      res.type("application/pdf");
+      res.setHeader("Content-Disposition", 'attachment; filename="utilization.pdf"');
+      res.send(pdf);
+      return;
+    }
     res.json(report);
-  });
+  }));
 
   // --- import / export ------------------------------------------------------
 
