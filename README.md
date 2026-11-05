@@ -29,6 +29,10 @@ admin key stable across restarts:
 BOOKING_ADMIN_KEY=bk_change_me_to_something_long npm run dev
 ```
 
+PDF reports (`format=pdf`) are rendered with [pandoc](https://pandoc.org), so
+install it on the host (`brew install pandoc` / `apt-get install pandoc`) along
+with a LaTeX engine.
+
 ## Authentication
 
 Every route except `GET /health` requires an API key. Send it as a bearer
@@ -105,7 +109,7 @@ curl -X POST localhost:3000/auth/keys/$KEY_ID/rotate -H "authorization: Bearer $
 | GET    | `/bookings`      | List bookings, paginated (`?resourceId=`, `limit`, `cursor`) |
 | PATCH  | `/bookings/:id`  | Edit a booking (`bookedBy`, `start`, `end`, `private`) |
 | DELETE | `/bookings/:id`  | Cancel a booking                             |
-| GET    | `/reports/utilization` | Utilization report (`?from=&to=`, `&format=csv\|md`) |
+| GET    | `/reports/utilization` | Utilization report (`?from=&to=`, `&format=csv\|md\|pdf`, `&title=` for PDFs) |
 | GET    | `/audit`         | Audit log (admin; filter by `action`, `actorKeyId`, `subjectId`, `from`, `to`; paginate with `limit`, `offset`) |
 | POST   | `/webhooks`      | Register a webhook (admin)                   |
 | GET    | `/webhooks`      | List webhooks (admin)                        |
