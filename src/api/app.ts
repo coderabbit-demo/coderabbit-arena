@@ -5,6 +5,7 @@ import { RecurrenceError } from "../recurrence/types";
 import { ReportError } from "../reports/types";
 import { reportToCsv } from "../reports/csv";
 import { reportToMarkdown } from "../reports/markdown";
+import { bookingsToIcs } from "../reports/ics";
 import { ApiKeyService } from "../auth/apiKeys";
 import { actorOf, authenticate, AuthenticatedRequest, requirePermission } from "../auth/middleware";
 import { AuthError, ForbiddenError } from "../auth/types";
@@ -174,6 +175,16 @@ export function createApp(deps: AppDependencies) {
     res.json(actorOf(req));
   });
 
+  if (settings) {
+    app.get("/settings", requirePermission("reports:read"), (_req, res) => {
+      res.json(settings.get());
+    });
+
+    app.put("/settings", requirePermission("keys:manage"), (req, res) => {
+      res.json(settings.update(req.body ?? {}));
+    });
+  }
+
   app.post("/auth/keys", requirePermission("keys:manage"), (req, res) => {
     const issued = apiKeys.issue(req.body ?? {}, actorOf(req));
     res.status(201).json(issued);
@@ -181,6 +192,10 @@ export function createApp(deps: AppDependencies) {
 
   app.get("/auth/keys", requirePermission("keys:manage"), (req, res) => {
     res.json(apiKeys.list(actorOf(req)));
+  });
+
+  app.get("/auth/keys/:id", requirePermission("keys:manage"), (req, res) => {
+    res.json(apiKeys.get(req.params.id, actorOf(req)));
   });
 
   app.delete("/auth/keys/:id", requirePermission("keys:manage"), (req, res) => {
@@ -216,6 +231,26 @@ export function createApp(deps: AppDependencies) {
     res.json(service.listResources());
   });
 
+  if (resourcePhotos) {
+    app.put(
+      "/resources/:id/photo",
+      requirePermission("resources:write"),
+      wrap(async (req, res) => {
+        const photo = await resourcePhotos.setFromUrl(req.params.id, req.body?.url);
+        res.status(201).json({
+          resourceId: photo.resourceId,
+          contentType: photo.contentType,
+          bytes: photo.bytes.length,
+        });
+      }),
+    );
+
+    app.get("/resources/:id/photo", requirePermission("resources:read"), (req, res) => {
+      const photo = resourcePhotos.get(req.params.id);
+      res.type(photo.contentType).send(photo.bytes);
+    });
+  }
+
   // --- bookings -------------------------------------------------------------
 
   app.post("/bookings", requirePermission("bookings:write"), (req, res) => {
@@ -228,8 +263,22 @@ export function createApp(deps: AppDependencies) {
     res.status(201).json(result);
   });
 
+  app.get("/bookings/search", requirePermission("bookings:read"), (req, res) => {
+    res.json(service.searchBookings(queryString(req, "q") ?? "", actorOf(req)));
+  });
+
   app.get("/bookings", requirePermission("bookings:read"), (req, res) => {
-    res.json(service.listBookings(queryString(req, "resourceId")));
+    res.json(
+      service.listBookingsPage({
+        resourceId: queryString(req, "resourceId"),
+        limit: queryNumber(req, "limit"),
+        cursor: queryString(req, "cursor"),
+      }),
+    );
+  });
+
+  app.patch("/bookings/:id", requirePermission("bookings:write"), (req, res) => {
+    res.json(service.updateBooking(req.params.id, req.body ?? {}, actorOf(req)));
   });
 
   app.delete("/bookings/:id", requirePermission("bookings:write"), (req, res) => {
@@ -331,7 +380,7 @@ export function createApp(deps: AppDependencies) {
 
   // --- reports --------------------------------------------------------------
 
-  app.get("/reports/utilization", requirePermission("reports:read"), (req, res) => {
+  app.get("/reports/utilization", requirePermission("reports:read"), wrap(async (req, res) => {
     const report = service.utilizationReport({
       window: {
         from: queryString(req, "from") ?? "",
@@ -349,8 +398,61 @@ export function createApp(deps: AppDependencies) {
       res.type("text/markdown").send(reportToMarkdown(report));
       return;
     }
+    if (format === "pdf") {
+      const pdf = await reportToPdf(report, { title: queryString(req, "title") });
+      res.type("application/pdf");
+      res.setHeader("Content-Disposition", 'attachment; filename="utilization.pdf"');
+      res.send(pdf);
+      return;
+    }
     res.json(report);
-  });
+  }));
+
+  // --- import / export ------------------------------------------------------
+
+  if (importer) {
+    app.post("/admin/import", requirePermission("resources:write"), (req, res) => {
+      const result = importer.importPayload(
+        req.body ?? {},
+        { dryRun: queryBool(req, "dryRun"), continueOnError: !queryBool(req, "strict") },
+        actorOf(req),
+      );
+      res.status(result.errors.length > 0 ? 207 : 200).json(result);
+    });
+
+    app.post(
+      "/admin/import/url",
+      requirePermission("resources:write"),
+      wrap(async (req, res) => {
+        const result = await importer.importFromUrl(
+          req.body?.url,
+          { dryRun: queryBool(req, "dryRun"), continueOnError: !queryBool(req, "strict") },
+          actorOf(req),
+        );
+        res.status(result.errors.length > 0 ? 207 : 200).json(result);
+      }),
+    );
+
+    app.get("/admin/export", requirePermission("audit:read"), (req, res) => {
+      if (queryString(req, "format") === "csv") {
+        res.type("text/csv").send(importer.exportBookingsCsv(actorOf(req)));
+        return;
+      }
+      res.json(importer.exportAll(actorOf(req)));
+    });
+
+    app.post("/admin/export", requirePermission("audit:read"), (req, res) => {
+      res.status(201).json(importer.exportToFile(req.body?.name ?? "", actorOf(req)));
+    });
+
+    app.get("/admin/exports", requirePermission("audit:read"), (req, res) => {
+      res.json(importer.listExports(actorOf(req)));
+    });
+
+    app.get("/admin/exports/:name", requirePermission("audit:read"), (req, res) => {
+      res.type("application/json").send(importer.readExport(req.params.name, actorOf(req)));
+    });
+  }
 
   // --- import / export ------------------------------------------------------
 

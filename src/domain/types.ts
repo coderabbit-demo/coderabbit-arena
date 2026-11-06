@@ -30,6 +30,11 @@ export interface Booking {
   cancelledBy?: string;
   /** Present when this booking is part of a recurring series. */
   seriesId?: string;
+  /**
+   * Private bookings (1:1s, interviews, HR meetings) are only listed to the
+   * key that created them and to keys holding `bookings:read:private`.
+   */
+  private?: boolean;
 }
 
 export interface CreateResourceInput {
@@ -42,6 +47,16 @@ export interface CreateBookingInput {
   bookedBy: string;
   start: string;
   end: string;
+  /** Hide the booking from other keys' listings. Defaults to false. */
+  private?: boolean;
+}
+
+/** Fields a booking's owner may change after it was created. */
+export interface UpdateBookingInput {
+  bookedBy?: string;
+  start?: string;
+  end?: string;
+  private?: boolean;
 }
 
 /** A closed-open time interval used for availability math. */

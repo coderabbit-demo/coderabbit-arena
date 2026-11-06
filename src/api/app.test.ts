@@ -1,6 +1,6 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { AddressInfo } from "net";
-import { Server } from "http";
+import { request, Server } from "http";
 import { createApp } from "./app";
 import { AuditLog } from "../audit/audit";
 import { ApiKeyService } from "../auth/apiKeys";
@@ -15,6 +15,7 @@ let adminSecret: string;
 let memberSecret: string;
 let viewerSecret: string;
 let apiKeys: ApiKeyService;
+let store: InMemoryStore;
 let webhooks: WebhookService;
 let posted: Array<{ url: string; body: string }>;
 
@@ -46,7 +47,8 @@ async function call(
 }
 
 beforeAll(async () => {
-  const store = new InMemoryStore();
+  vi.stubEnv("CALENDAR_SYNC_TOKEN", "configured-calendar-sync-test-token");
+  store = new InMemoryStore();
   const bus = new EventBus();
   const audit = new AuditLog(store, bus);
   apiKeys = new ApiKeyService(store, bus);
@@ -76,6 +78,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await webhooks.drain();
   await new Promise<void>((resolve) => server.close(() => resolve()));
+  vi.unstubAllEnvs();
 });
 
 describe("authentication", () => {
@@ -100,10 +103,97 @@ describe("authentication", () => {
     expect(basic.status).toBe(401);
   });
 
+  it("lets the calendar sync worker in with its service token", async () => {
+    const res = await call("GET", "/auth/whoami", {
+      headers: { "x-service-token": "configured-calendar-sync-test-token" },
+    });
+    expect(res.status).toBe(200);
+    expect(res.json).toMatchObject({ name: "calendar sync service" });
+  });
+
+  it.each(["", "calendar-sync-dev-token", "wrong-token"])(
+    "rejects an incorrect service token: %s",
+    async (token) => {
+      const res = await call("GET", "/auth/whoami", {
+        headers: { "x-service-token": token },
+      });
+      expect(res.status).toBe(401);
+    },
+  );
+
   it("identifies the caller on /auth/whoami", async () => {
-    const res = await call("GET", "/auth/whoami", { token: memberSecret });
+    const res = await call("GET", "/auth/whoami", {
+      token: memberSecret,
+      headers: { "x-service-token": "calendar-sync-dev-token" },
+    });
     expect(res.status).toBe(200);
     expect(res.json).toMatchObject({ name: "member", role: "member" });
+  });
+
+  it("accepts the X-Api-Key header and api_key query parameter", async () => {
+    const header = await call("GET", "/auth/whoami", {
+      headers: { "x-api-key": memberSecret },
+    });
+    expect(header.status).toBe(200);
+    expect(header.json.role).toBe("member");
+
+    const query = await call("GET", `/auth/whoami?api_key=${memberSecret}`);
+    expect(query.status).toBe(200);
+    expect(query.json.role).toBe("member");
+  });
+
+  it("issues scoped and expiring keys and enforces the scopes", async () => {
+    const issued = await call("POST", "/auth/keys", {
+      token: adminSecret,
+      body: { name: "signage", role: "member", scopes: ["bookings:read"], expiresInDays: 30 },
+    });
+    expect(issued.status).toBe(201);
+    expect(issued.json.key.scopes).toEqual(["bookings:read"]);
+    expect(issued.json.key.expiresAt).toBeTruthy();
+
+    const me = await call("GET", "/auth/whoami", { token: issued.json.secret });
+    expect(me.json.scopes).toEqual(["bookings:read"]);
+
+    expect((await call("GET", "/bookings", { token: issued.json.secret })).status).toBe(200);
+    const denied = await call("POST", "/resources", {
+      token: issued.json.secret,
+      body: { name: "nope" },
+    });
+    expect(denied.status).toBe(403);
+
+    const tooBroad = await call("POST", "/auth/keys", {
+      token: adminSecret,
+      body: { name: "x", role: "viewer", scopes: ["keys:manage"] },
+    });
+    expect(tooBroad.status).toBe(401);
+  });
+
+  it("rotates a key and keeps the old secret working during the grace window", async () => {
+    const issued = await call("POST", "/auth/keys", {
+      token: adminSecret,
+      body: { name: "bot", role: "service" },
+    });
+    expect(issued.status).toBe(201);
+
+    const rotated = await call("POST", `/auth/keys/${issued.json.key.id}/rotate`, {
+      token: issued.json.secret,
+    });
+    expect(rotated.status).toBe(201);
+    expect(rotated.json.secret).not.toBe(issued.json.secret);
+    expect(rotated.json.key.rotatedAt).toBeTruthy();
+
+    expect((await call("GET", "/auth/whoami", { token: rotated.json.secret })).status).toBe(200);
+    expect((await call("GET", "/auth/whoami", { token: issued.json.secret })).status).toBe(200);
+
+    const denied = await call("POST", `/auth/keys/${issued.json.key.id}/rotate`, {
+      token: memberSecret,
+    });
+    expect(denied.status).toBe(403);
+
+    const fetched = await call("GET", `/auth/keys/${issued.json.key.id}`, { token: adminSecret });
+    expect(fetched.status).toBe(200);
+    expect(fetched.json.prefix).toBe(rotated.json.key.prefix);
+    expect(fetched.json.secretHash).toBeUndefined();
   });
 
   it("rejects a revoked key", async () => {
@@ -161,6 +251,43 @@ describe("bookings end to end", () => {
     roomId = res.json.id;
   });
 
+  it("rejects an invalid recurring series without bookings or an audit event", async () => {
+    const before = await call("GET", "/audit?action=booking.series.created", { token: adminSecret });
+    const res = await call("POST", "/bookings/recurring", {
+      token: memberSecret,
+      body: {
+        resourceId: roomId,
+        bookedBy: "Ada",
+        start: "2026-08-03T09:00:00Z",
+        end: "2026-08-03T10:00:00Z",
+        rule: { frequency: "daily", interval: 100000000, count: 2 },
+      },
+    });
+    expect(res.status).toBe(400);
+    expect(store.bookingsForResource(roomId)).toEqual([]);
+    const after = await call("GET", "/audit?action=booking.series.created", { token: adminSecret });
+    expect(after.json.total).toBe(before.json.total);
+
+    const created = await call("POST", "/bookings/recurring", {
+      token: memberSecret,
+      body: {
+        resourceId: roomId,
+        bookedBy: "Ada",
+        start: "2026-08-03T09:00:00Z",
+        end: "2026-08-03T10:00:00Z",
+        rule: { frequency: "daily", interval: 1, count: 2 },
+      },
+    });
+    expect(created.status).toBe(201);
+    expect(store.bookingsForResource(roomId)).toHaveLength(2);
+    const audit = await call("GET", `/audit?subjectId=${created.json.seriesId}`, { token: adminSecret });
+    expect(audit.json.entries).toHaveLength(1);
+    expect(audit.json.entries[0]).toMatchObject({
+      action: "booking.series.created",
+      details: { count: 2, bookingIds: created.json.bookings.map((b: { id: string }) => b.id) },
+    });
+  });
+
   it("creates, lists and cancels a booking with ownership enforced", async () => {
     const created = await call("POST", "/bookings", {
       token: memberSecret,
@@ -176,7 +303,8 @@ describe("bookings end to end", () => {
 
     const listed = await call("GET", `/bookings?resourceId=${roomId}`, { token: viewerSecret });
     expect(listed.status).toBe(200);
-    expect(listed.json).toHaveLength(1);
+    expect(listed.json.data).toHaveLength(1);
+    expect(listed.json.nextCursor).toBeNull();
 
     // A different member cannot cancel it.
     const other = await call("POST", "/auth/keys", {
@@ -194,6 +322,28 @@ describe("bookings end to end", () => {
     });
     expect(cancelled.status).toBe(200);
     expect(cancelled.json.status).toBe("cancelled");
+  });
+
+  it("hides private bookings from other keys", async () => {
+    const created = await call("POST", "/bookings", {
+      token: memberSecret,
+      body: {
+        resourceId: roomId,
+        bookedBy: "Ada",
+        start: "2026-08-02T09:00:00Z",
+        end: "2026-08-02T10:00:00Z",
+        private: true,
+      },
+    });
+    expect(created.status).toBe(201);
+    expect(created.json.private).toBe(true);
+
+    const asViewer = await call("GET", `/bookings?resourceId=${roomId}`, { token: viewerSecret });
+    expect(asViewer.json).toHaveLength(0);
+    const asOwner = await call("GET", `/bookings?resourceId=${roomId}`, { token: memberSecret });
+    expect(asOwner.json).toHaveLength(1);
+    const asAdmin = await call("GET", `/bookings?resourceId=${roomId}`, { token: adminSecret });
+    expect(asAdmin.json).toHaveLength(1);
   });
 
   it("maps domain errors to status codes", async () => {
@@ -256,6 +406,61 @@ describe("bookings end to end", () => {
 
     const bad = await call("GET", "/reports/utilization?from=x&to=y", { token: viewerSecret });
     expect(bad.status).toBe(400);
+  });
+
+  it("prices a member's long booking over a clipped report window", async () => {
+    const created = await call("POST", "/bookings", {
+      token: memberSecret,
+      body: {
+        resourceId: roomId,
+        bookedBy: "Ada",
+        start: "-271821-04-20T00:00:00.000Z",
+        end: "+275760-09-13T00:00:00.000Z",
+      },
+    });
+    expect(created.status).toBe(201);
+
+    const window = new URLSearchParams({
+      from: "0000-01-01T00:00:00.000Z",
+      to: "+010000-01-01T00:00:00.000Z",
+    });
+    const body = JSON.stringify({ rules: {
+      hourlyRateCents: 6000,
+      peakStartHour: 9,
+      peakEndHour: 17,
+      peakMultiplier: 1.5,
+      weekendSurcharge: 0,
+      minimumChargeCents: 0,
+    } });
+    // fetch forbids GET bodies; the report route accepts them via express.json.
+    const report = await new Promise<{ status: number | undefined; text: string }>((resolve, reject) => {
+      const req = request(`${baseUrl}/reports/utilization?${window}`, {
+        method: "GET",
+        headers: {
+          authorization: `Bearer ${memberSecret}`,
+          "content-type": "application/json",
+          "content-length": Buffer.byteLength(body),
+        },
+      }, (res) => {
+        let text = "";
+        res.setEncoding("utf8");
+        res.on("data", (chunk) => { text += chunk; });
+        res.on("end", () => resolve({ status: res.statusCode, text }));
+        res.on("error", reject);
+      });
+      req.on("error", reject);
+      req.end(body);
+    });
+
+    expect(report.status).toBe(200);
+    const days = 3652425; // Ten thousand Gregorian years, including leap days.
+    expect(JSON.parse(report.text).resources).toContainEqual(expect.objectContaining({
+      resourceId: roomId,
+      bookingCount: 1,
+      bookedMinutes: days * 1440,
+      utilization: 1,
+      revenueCents: days * 168000,
+    }));
   });
 });
 

@@ -84,10 +84,10 @@ export function summarize(event: DomainEvent): Pick<AuditEntry, "subjectType" | 
     case "booking.cancelled":
       return {
         subjectType: "booking",
-        subjectId: event.booking.id,
+        subjectId: event.bookingId,
         details: {
-          resourceId: event.booking.resourceId,
-          cancelledAt: event.booking.cancelledAt ?? null,
+          resourceId: event.resourceId,
+          cancelledAt: event.cancelledAt,
         },
       };
     case "apikey.issued":
@@ -98,6 +98,12 @@ export function summarize(event: DomainEvent): Pick<AuditEntry, "subjectType" | 
       };
     case "apikey.revoked":
       return { subjectType: "apikey", subjectId: event.keyId, details: {} };
+    case "apikey.rotated":
+      return {
+        subjectType: "apikey",
+        subjectId: event.keyId,
+        details: { graceUntil: event.graceUntil },
+      };
     case "webhook.registered":
       return {
         subjectType: "webhook",

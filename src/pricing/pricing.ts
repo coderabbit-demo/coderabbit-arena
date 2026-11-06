@@ -1,6 +1,7 @@
 import { Cents, PriceBreakdown, PricingRules, QuoteInput, Weekday } from "./types";
 
 const MINUTES_PER_HOUR = 60;
+const MINUTES_PER_DAY = 24 * MINUTES_PER_HOUR;
 const MS_PER_MINUTE = 60 * 1000;
 
 export class PricingError extends Error {
@@ -63,20 +64,29 @@ function splitMinutes(
   end: Date,
   rules: PricingRules,
 ): { peak: number; offPeak: number } {
-  let peak = 0;
-  let offPeak = 0;
-
   const totalMinutes = Math.round((end.getTime() - start.getTime()) / MS_PER_MINUTE);
-  for (let i = 0; i < totalMinutes; i++) {
-    const at = new Date(start.getTime() + i * MS_PER_MINUTE);
-    if (isPeakHour(at.getUTCHours(), rules)) {
-      peak += 1;
-    } else {
-      offPeak += 1;
-    }
+
+  // isPeakHour compares whole UTC hours, including for fractional rule bounds.
+  const peakStart = Math.ceil(rules.peakStartHour) * MINUTES_PER_HOUR;
+  const peakEnd = Math.ceil(rules.peakEndHour) * MINUTES_PER_HOUR;
+  if (!(peakStart < peakEnd)) {
+    return { peak: 0, offPeak: totalMinutes };
   }
 
-  return { peak, offPeak };
+  // Minute samples repeat every UTC day. Count whole days at once, then the
+  // remaining samples, which can intersect today's and tomorrow's peak window.
+  // Seconds stay fixed between samples, so only the starting hour/minute matter.
+  const wholeDays = Math.floor(totalMinutes / MINUTES_PER_DAY);
+  const firstMinute = start.getUTCHours() * MINUTES_PER_HOUR + start.getUTCMinutes();
+  const lastMinute = firstMinute + totalMinutes % MINUTES_PER_DAY;
+  const overlap = (from: number, to: number): number =>
+    Math.max(0, Math.min(lastMinute, to) - Math.max(firstMinute, from));
+
+  const peak = wholeDays * (peakEnd - peakStart)
+    + overlap(peakStart, peakEnd)
+    + overlap(peakStart + MINUTES_PER_DAY, peakEnd + MINUTES_PER_DAY);
+
+  return { peak, offPeak: totalMinutes - peak };
 }
 
 /**

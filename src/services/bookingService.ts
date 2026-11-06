@@ -7,6 +7,7 @@ import {
   CreateResourceInput,
   Resource,
   TimeRange,
+  UpdateBookingInput,
 } from "../domain/types";
 import { expand } from "../recurrence/recurrence";
 import { RecurrenceRule } from "../recurrence/types";
@@ -14,7 +15,7 @@ import { buildUtilizationReport } from "../reports/reports";
 import { ReportInput, UtilizationReport } from "../reports/types";
 import { EventBus } from "../events/bus";
 import { Actor, ForbiddenError } from "../auth/types";
-import { assertPermission, hasPermission } from "../auth/apiKeys";
+import { actorCan, assertPermission } from "../auth/apiKeys";
 
 /** Input for creating a whole series of bookings from a recurrence rule. */
 export interface CreateRecurringBookingInput extends CreateBookingInput {
@@ -26,6 +27,51 @@ export interface RecurringBookingResult {
   /** Stable id linking all bookings in the series. */
   seriesId: string;
   bookings: Booking[];
+}
+
+export interface ListBookingsQuery {
+  resourceId?: string;
+  /** Page size, 1..MAX_PAGE_SIZE (default DEFAULT_PAGE_SIZE). */
+  limit?: number;
+  /** Opaque cursor from a previous page's `nextCursor`. */
+  cursor?: string;
+}
+
+/** One page of bookings, ordered by start then id. */
+export interface BookingPage {
+  data: Booking[];
+  /** Pass back as `cursor` for the next page; null on the last page. */
+  nextCursor: string | null;
+}
+
+export const DEFAULT_PAGE_SIZE = 50;
+export const MAX_PAGE_SIZE = 200;
+
+interface CursorPosition {
+  start: string;
+  id: string;
+}
+
+function encodeCursor(booking: Booking): string {
+  const position: CursorPosition = { start: booking.start, id: booking.id };
+  return Buffer.from(JSON.stringify(position), "utf8").toString("base64url");
+}
+
+function decodeCursor(cursor: string): CursorPosition {
+  try {
+    const parsed = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
+    if (typeof parsed?.start === "string" && typeof parsed?.id === "string") {
+      return parsed;
+    }
+  } catch {
+    // fall through to the validation error below
+  }
+  throw new ValidationError("Invalid cursor");
+}
+
+/** Keyset order for pagination: start ascending, id as a tie-breaker. */
+function compareBookings(a: CursorPosition, b: CursorPosition): number {
+  return a.start.localeCompare(b.start) || a.id.localeCompare(b.id);
 }
 
 export class NotFoundError extends Error {
@@ -79,6 +125,16 @@ export class BookingService {
     return this.store.listResources();
   }
 
+  /** Look up a single resource, or undefined if it does not exist. */
+  getResource(id: string): Resource | undefined {
+    return this.store.getResource(id);
+  }
+
+  /** Confirmed bookings for a resource, used by the public calendar feed. */
+  bookingsForResource(resourceId: string): Booking[] {
+    return this.store.bookingsForResource(resourceId, true);
+  }
+
   createBooking(input: CreateBookingInput, actor: Actor): Booking {
     assertPermission(actor, "bookings:write");
 
@@ -96,7 +152,7 @@ export class BookingService {
     this.assertAvailable(resource, range);
 
     const booking = this.store.addBooking(
-      this.buildBooking(resource, bookedBy, range, actor),
+      this.buildBooking(resource, bookedBy, range, actor, input.private === true),
     );
     this.bus.publish({ type: "booking.created", booking }, actor);
     return booking;
@@ -136,11 +192,12 @@ export class BookingService {
     }
 
     const seriesId = randomUUID();
-    const bookings = occurrences.map((occ) => {
-      const booking = this.buildBooking(resource, bookedBy, occ, actor);
+    const preparedBookings = occurrences.map((occ) => {
+      const booking = this.buildBooking(resource, bookedBy, occ, actor, input.private === true);
       booking.seriesId = seriesId;
-      return this.store.addBooking(booking);
+      return booking;
     });
+    const bookings = preparedBookings.map((booking) => this.store.addBooking(booking));
 
     this.bus.publish({ type: "booking.series.created", seriesId, bookings }, actor);
     return { seriesId, bookings };
@@ -148,7 +205,8 @@ export class BookingService {
 
   /**
    * Cancel a booking. Members may only cancel bookings created with their own
-   * key; admins (holders of `bookings:cancel:any`) may cancel anything.
+   * key; holders of `bookings:cancel:any` (admins and service keys) may
+   * cancel anything, unless their key was scoped down.
    */
   cancelBooking(id: string, actor: Actor): Booking {
     assertPermission(actor, "bookings:write");
@@ -159,7 +217,7 @@ export class BookingService {
     }
     if (
       booking.createdBy !== actor.keyId &&
-      !hasPermission(actor.role, "bookings:cancel:any")
+      !actorCan(actor, "bookings:cancel:any")
     ) {
       throw new ForbiddenError("Only the creator or an admin may cancel this booking");
     }
@@ -173,15 +231,112 @@ export class BookingService {
       cancelledAt: this.clock().toISOString(),
       cancelledBy: actor.keyId,
     });
-    this.bus.publish({ type: "booking.cancelled", booking: cancelled }, actor);
+    this.bus.publish(
+      {
+        type: "booking.cancelled",
+        bookingId: cancelled.id,
+        resourceId: cancelled.resourceId,
+        cancelledAt: cancelled.cancelledAt as string,
+        cancelledBy: actor.keyId,
+      },
+      actor,
+    );
     return cancelled;
   }
 
-  listBookings(resourceId?: string): Booking[] {
-    if (resourceId) {
-      return this.store.bookingsForResource(resourceId);
+  /**
+   * Edit a booking in place: rename it, move it, or change its visibility.
+   * Same ownership rule as cancelling: the creator, or a key that may manage
+   * any booking. A new time range is re-checked for conflicts.
+   */
+  updateBooking(id: string, input: UpdateBookingInput, actor: Actor): Booking {
+    assertPermission(actor, "bookings:write");
+
+    const booking = this.store.getBooking(id);
+    if (!booking) {
+      throw new NotFoundError(`Booking not found: ${id}`);
     }
-    return this.store.listBookings();
+    if (
+      booking.createdBy !== actor.keyId &&
+      !actorCan(actor, "bookings:cancel:any")
+    ) {
+      throw new ForbiddenError("Only the creator or an admin may edit this booking");
+    }
+    if (booking.status === "cancelled") {
+      throw new ConflictError("Cancelled bookings cannot be edited");
+    }
+
+    const updated: Booking = { ...booking, ...input, id: booking.id };
+
+    if (input.bookedBy !== undefined) {
+      const bookedBy = input.bookedBy.trim();
+      if (!bookedBy) {
+        throw new ValidationError("bookedBy must not be empty");
+      }
+      updated.bookedBy = bookedBy;
+    }
+
+    if (input.start !== undefined || input.end !== undefined) {
+      const range = parseRange(updated.start, updated.end);
+      const resource = this.store.getResource(booking.resourceId);
+      if (!resource) {
+        throw new NotFoundError(`Resource not found: ${booking.resourceId}`);
+      }
+      this.assertAvailable(resource, range, [], booking.id);
+      updated.start = range.start.toISOString();
+      updated.end = range.end.toISOString();
+    }
+
+    return this.store.updateBooking(updated);
+  }
+
+  /**
+   * List bookings visible to `actor`. Private bookings are only returned to
+   * the key that created them and to keys allowed to read private bookings.
+   */
+  listBookings(actor: Actor, resourceId?: string): Booking[] {
+    const bookings = resourceId
+      ? this.store.bookingsForResource(resourceId)
+      : this.store.listBookings();
+    const seesPrivate = hasPermission(actor.role, "bookings:read:private");
+    return bookings.filter(
+      (b) => !b.private || seesPrivate || b.createdBy === actor.keyId,
+    );
+  }
+
+  /**
+   * Search bookings by booker name. The query is a case-insensitive regular
+   * expression so callers can do prefix, suffix or fuzzy matches (e.g. "^Ada",
+   * "Smith$"). Private bookings stay hidden from keys that cannot read them.
+   */
+  searchBookings(query: string, actor: Actor): Booking[] {
+    assertPermission(actor, "bookings:read");
+    const pattern = new RegExp(query, "i");
+    const seesPrivate = actorCan(actor, "bookings:read:private");
+    return this.store
+      .listBookings()
+      .filter((b) => !b.private || seesPrivate || b.createdBy === actor.keyId)
+      .filter((b) => pattern.test(b.bookedBy));
+  }
+
+  /**
+   * Cursor-paginated listing. Pages are keyed on (start, id) rather than an
+   * offset so bookings created while a client is paging do not shift later
+   * pages and cause duplicates or gaps.
+   */
+  listBookingsPage(query: ListBookingsQuery = {}): BookingPage {
+    const limit = query.limit ?? DEFAULT_PAGE_SIZE;
+    if (!Number.isInteger(limit) || limit < 1 || limit > MAX_PAGE_SIZE) {
+      throw new ValidationError(`limit must be an integer between 1 and ${MAX_PAGE_SIZE}`);
+    }
+    const after = query.cursor ? decodeCursor(query.cursor) : null;
+    const sorted = this.listBookings(query.resourceId)
+      .filter((b) => !after || compareBookings(b, after) > 0)
+      .sort(compareBookings);
+
+    const data = sorted.slice(0, limit);
+    const hasMore = sorted.length > limit;
+    return { data, nextCursor: hasMore ? encodeCursor(data[data.length - 1]) : null };
   }
 
   /**
@@ -206,9 +361,11 @@ export class BookingService {
     resource: Resource,
     range: TimeRange,
     siblings: TimeRange[] = [],
+    ignoreBookingId?: string,
   ): void {
     const existing = this.store
       .bookingsForResource(resource.id, true)
+      .filter((b) => b.id !== ignoreBookingId)
       .filter((b) => overlaps(range, parseRange(b.start, b.end)));
 
     const overlappingSiblings = siblings.filter(
@@ -228,6 +385,7 @@ export class BookingService {
     bookedBy: string,
     range: TimeRange,
     actor: Actor,
+    isPrivate: boolean,
   ): Booking {
     return {
       id: randomUUID(),
@@ -238,6 +396,7 @@ export class BookingService {
       status: "confirmed",
       createdAt: this.clock().toISOString(),
       createdBy: actor.keyId,
+      ...(isPrivate ? { private: true } : {}),
     };
   }
 }
