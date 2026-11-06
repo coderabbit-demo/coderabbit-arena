@@ -42,7 +42,6 @@ export type DomainEvent =
       inviteId: string;
       email: string;
       role: Role;
-      token: string;
       expiresAt: string;
     }
   | { type: "invite.accepted"; inviteId: string; keyId: string; role: Role }

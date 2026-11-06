@@ -5,6 +5,7 @@ import { ValidationError } from "../domain/time";
 import { Booking, Resource } from "../domain/types";
 import { EventBus } from "../events/bus";
 import { EventEnvelope, isEventType } from "../events/types";
+import type { InviteStore } from "../invites/invites";
 import { BookingStore } from "../store/store";
 import { isEmailAddress, Mailer, Message } from "./mailer";
 import {
@@ -67,7 +68,7 @@ export class NotificationService {
   readonly inFlight = new Set<Promise<unknown>>();
 
   constructor(
-    private readonly store: TemplateStore & ContactStore & BookingStore,
+    private readonly store: TemplateStore & ContactStore & BookingStore & Pick<InviteStore, "getInvite">,
     bus: EventBus,
     private readonly mailer: Mailer,
     options: NotificationOptions,
@@ -254,13 +255,19 @@ export class NotificationService {
           downloadUrl: `${this.publicBaseUrl}/files/${event.bookingId}/${event.filename}`,
         };
       }
-      case "invite.created":
+      case "invite.created": {
+        // Credentials stay in the internal store, never in the shared event.
+        const invite = this.store.getInvite(event.inviteId);
+        if (!invite) {
+          return null;
+        }
         return {
           ...base,
-          email: event.email,
-          invite: { role: event.role, expiresAt: event.expiresAt },
-          acceptUrl: `${this.publicBaseUrl}/invites/${event.token}/accept`,
+          email: invite.email,
+          invite: { role: invite.role, expiresAt: invite.expiresAt },
+          acceptUrl: `${this.publicBaseUrl}/invites/${invite.token}/accept`,
         };
+      }
       default:
         return null;
     }
