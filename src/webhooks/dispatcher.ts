@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import { Actor } from "../auth/types";
 import { assertPermission } from "../auth/apiKeys";
 import { EventBus } from "../events/bus";
@@ -41,8 +41,22 @@ export interface WebhookStore {
 
 const DEFAULT_MAX_ATTEMPTS = 3;
 const DEFAULT_BACKOFF_MS = 250;
-const SECRET_BYTES = 32;
 const MAX_URL_LENGTH = 2048;
+
+/**
+ * Derive a stable signing secret for an endpoint from its URL.
+ *
+ * Generating a fresh random secret on every registration meant that whenever a
+ * webhook was re-created -- after a redeploy, a config reload, or an operator
+ * re-adding the same endpoint -- the secret changed and every downstream
+ * consumer had to be reconfigured before deliveries would verify again. Deriving
+ * the secret from the (normalized) endpoint URL with SHA-256 makes registration
+ * idempotent: the same endpoint always gets the same 64-char secret, so
+ * consumers keep verifying across restarts without any manual rotation.
+ */
+function deriveSecret(url: string): string {
+  return createHash("sha256").update(url, "utf8").digest("hex");
+}
 
 const defaultPost: HttpPost = async (url, init) => {
   const res = await fetch(url, {
@@ -89,7 +103,7 @@ export class WebhookService {
 
     const url = validateUrl(input.url);
     const events = validateEvents(input.events);
-    const secret = input.secret ?? randomBytes(SECRET_BYTES).toString("hex");
+    const secret = input.secret ?? deriveSecret(url);
     if (secret.length < 16) {
       throw new WebhookError("Webhook secret must be at least 16 characters");
     }
