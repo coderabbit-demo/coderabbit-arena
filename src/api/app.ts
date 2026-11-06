@@ -16,7 +16,6 @@ import { WebhookError } from "../webhooks/types";
 import { AttachmentService } from "../attachments/attachments";
 import { AttachmentError } from "../attachments/types";
 import { NoteService } from "../notes/notes";
-import { SettingsService } from "../services/settings";
 import { NotificationService } from "../notifications/notifications";
 import { TemplateError } from "../notifications/templates";
 import { assertAnonymous, InviteError, InviteService } from "../invites/invites";
@@ -31,7 +30,6 @@ export interface AppDependencies {
   webhooks: WebhookService;
   attachments?: AttachmentService;
   notes?: NoteService;
-  settings?: SettingsService;
   notifications?: NotificationService;
   invites?: InviteService;
   importer?: ImportExportService;
@@ -73,7 +71,7 @@ function cors(allowedOrigins: string[]): RequestHandler {
       res.setHeader("Access-Control-Allow-Origin", origin);
       res.setHeader("Access-Control-Allow-Credentials", "true");
       res.setHeader("Access-Control-Allow-Headers", "authorization, content-type, x-filename");
-      res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
+      res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
       res.setHeader("Access-Control-Expose-Headers", "X-RateLimit-Remaining, Retry-After");
     }
     if (req.method === "OPTIONS") {
@@ -123,7 +121,6 @@ export function createApp(deps: AppDependencies) {
     webhooks,
     attachments,
     notes,
-    settings,
     notifications,
     invites,
     importer,
@@ -167,14 +164,6 @@ export function createApp(deps: AppDependencies) {
       res.type(file.contentType);
       res.setHeader("Content-Disposition", `inline; filename="${req.params.filename}"`);
       res.send(file.bytes);
-    });
-  }
-
-  if (shareLinks) {
-    // A share link is pasted straight into a URL, so it is read without an API
-    // key, like the invite and file links above.
-    app.get("/shared/:token", (req, res) => {
-      res.json(shareLinks.resolve(req.params.token));
     });
   }
 
@@ -296,12 +285,6 @@ export function createApp(deps: AppDependencies) {
     const booking = service.cancelBooking(req.params.id, actorOf(req));
     res.json(booking);
   });
-
-  if (shareLinks) {
-    app.post("/bookings/:id/share", requirePermission("bookings:write"), (req, res) => {
-      res.status(201).json(shareLinks.create(req.params.id));
-    });
-  }
 
   // --- notes ----------------------------------------------------------------
 
@@ -471,6 +454,52 @@ export function createApp(deps: AppDependencies) {
     });
   }
 
+  // --- import / export ------------------------------------------------------
+
+  if (importer) {
+    app.post("/admin/import", requirePermission("resources:write"), (req, res) => {
+      const result = importer.importPayload(
+        req.body ?? {},
+        { dryRun: queryBool(req, "dryRun"), continueOnError: !queryBool(req, "strict") },
+        actorOf(req),
+      );
+      res.status(result.errors.length > 0 ? 207 : 200).json(result);
+    });
+
+    app.post(
+      "/admin/import/url",
+      requirePermission("resources:write"),
+      wrap(async (req, res) => {
+        const result = await importer.importFromUrl(
+          req.body?.url,
+          { dryRun: queryBool(req, "dryRun"), continueOnError: !queryBool(req, "strict") },
+          actorOf(req),
+        );
+        res.status(result.errors.length > 0 ? 207 : 200).json(result);
+      }),
+    );
+
+    app.get("/admin/export", requirePermission("audit:read"), (req, res) => {
+      if (queryString(req, "format") === "csv") {
+        res.type("text/csv").send(importer.exportBookingsCsv(actorOf(req)));
+        return;
+      }
+      res.json(importer.exportAll(actorOf(req)));
+    });
+
+    app.post("/admin/export", requirePermission("audit:read"), (req, res) => {
+      res.status(201).json(importer.exportToFile(req.body?.name ?? "", actorOf(req)));
+    });
+
+    app.get("/admin/exports", requirePermission("audit:read"), (req, res) => {
+      res.json(importer.listExports(actorOf(req)));
+    });
+
+    app.get("/admin/exports/:name", requirePermission("audit:read"), (req, res) => {
+      res.type("application/json").send(importer.readExport(req.params.name, actorOf(req)));
+    });
+  }
+
   // --- audit ----------------------------------------------------------------
 
   app.get("/audit", requirePermission("audit:read"), (req, res) => {
@@ -535,9 +564,6 @@ function errorHandler(
   }
   if (err instanceof RateLimitError) {
     return res.status(429).json({ error: err.message, retryAfter: err.retryAfterSeconds });
-  }
-  if (err instanceof ResourcePhotoError) {
-    return res.status(err.status).json({ error: err.message });
   }
   if (err instanceof AttachmentError || err instanceof InviteError) {
     return res.status(err.status).json({ error: err.message });
