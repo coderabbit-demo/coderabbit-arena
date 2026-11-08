@@ -1,6 +1,14 @@
 # yaml-language-server: $schema=https://storage.googleapis.com/coderabbit_public_assets/schema.v2.json
 language: en-US
 
+reviews:
+  auto_approvals:
+    enabled: true
+    max_merge_risk: low
+    overrides:
+      - paths: ["src/auth/**"]
+        enabled: false
+
 knowledge_base:
   # Multi-repo awareness: the calendar sync service consumes this API's REST
   # endpoints and signed webhooks, so contract changes here can break it.
