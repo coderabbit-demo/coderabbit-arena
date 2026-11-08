@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sign, verifySignature } from "./signing";
+import { sign, signLegacy, verifySignature } from "./signing";
 
 const secret = "whsec_test_secret_0123456789";
 const eventId = "evt-0001";
@@ -52,10 +52,10 @@ describe("verifySignature", () => {
 
   it("rejects replays outside the tolerance window", () => {
     expect(
-      verifySignature({ secret, eventId, timestamp: now, body, signature, now: now + 301 }),
+      verifySignature({ secret, eventId, timestamp: now, body, signature, now: now + 3601 }),
     ).toBe(false);
     expect(
-      verifySignature({ secret, eventId, timestamp: now, body, signature, now: now + 299 }),
+      verifySignature({ secret, eventId, timestamp: now, body, signature, now: now + 3599 }),
     ).toBe(true);
     expect(
       verifySignature({
@@ -70,7 +70,7 @@ describe("verifySignature", () => {
     ).toBe(false);
   });
 
-  it("rejects malformed signatures, timestamps and the old v1 scheme", () => {
+  it("rejects malformed signatures and timestamps", () => {
     expect(
       verifySignature({ secret, eventId, timestamp: now, body, signature: "v2=abc", now }),
     ).toBe(false);
@@ -79,6 +79,15 @@ describe("verifySignature", () => {
     ).toBe(false);
     expect(
       verifySignature({ secret, eventId, timestamp: now, body, signature: signature.replace("v2=", "v1="), now }),
+    ).toBe(false);
+  });
+
+  it("accepts legacy v1 signatures from integrations on the old SDK", () => {
+    const legacy = signLegacy(secret, body);
+    expect(legacy).toMatch(/^v1=[0-9a-f]{64}$/);
+    expect(verifySignature({ secret, eventId, timestamp: now, body, signature: legacy, now })).toBe(true);
+    expect(
+      verifySignature({ secret, eventId, timestamp: now, body: body + "x", signature: legacy, now }),
     ).toBe(false);
   });
 });
