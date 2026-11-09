@@ -137,7 +137,6 @@ export function summarize(event: DomainEvent): Pick<AuditEntry, "subjectType" | 
         details: {
           email: event.email,
           role: event.role,
-          token: event.token,
           expiresAt: event.expiresAt,
         },
       };

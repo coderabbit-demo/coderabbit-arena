@@ -143,7 +143,6 @@ export class InviteService {
         inviteId: invite.id,
         email: invite.email,
         role: invite.role,
-        token: invite.token,
         expiresAt: invite.expiresAt,
       },
       actor,

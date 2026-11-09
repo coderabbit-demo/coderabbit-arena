@@ -1,4 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { AuditLog } from "../audit/audit";
+import { WebhookService } from "../webhooks/dispatcher";
+import { InviteService } from "../invites/invites";
+import { ApiKeyService } from "../auth/apiKeys";
 import { NotificationService } from "./notifications";
 import { isEmailAddress, MemoryMailer, serialize } from "./mailer";
 import { EventBus } from "../events/bus";
@@ -167,20 +171,57 @@ describe("delivery", () => {
   });
 
   it("emails invitees directly", async () => {
-    bus.publish(
-      {
-        type: "invite.created",
-        inviteId: "i1",
-        email: "new@example.com",
-        role: "member",
-        token: "tok.mac",
-        expiresAt: "2026-09-23T12:00:00.000Z",
-      },
-      admin,
-    );
+    const invites = new InviteService(store, new ApiKeyService(store, bus), bus, {
+      secret: "test-secret", ttlHours: 72,
+    });
+    const invite = invites.create({ email: "new@example.com" }, admin);
     await service.drain();
     expect(mailer.sent[0].to).toBe("new@example.com");
-    expect(mailer.sent[0].body).toContain("/invites/tok.mac/accept");
+    expect(mailer.sent[0].body).toContain(`/invites/${invite.token}/accept`);
+  });
+
+  it("keeps create and resend tokens out of webhooks, audit and event history", async () => {
+    const audit = new AuditLog(store, bus);
+    const bodies: string[] = [];
+    const webhooks = new WebhookService(store, bus, {
+      post: async (_url, init) => {
+        bodies.push(init.body);
+        return { status: 200 };
+      },
+    });
+    const integration: Actor = { keyId: "integration", name: "Integration", role: "service" };
+    webhooks.register({ url: "https://example.test/hooks", events: ["invite.created"] }, integration);
+    const invites = new InviteService(store, new ApiKeyService(store, bus), bus, {
+      secret: "test-secret", ttlHours: 72,
+    });
+    try {
+      expect(() => invites.create({ email: "new@example.com" }, integration)).toThrow(/not allowed/);
+      const first = invites.create({ email: "new@example.com", role: "viewer" }, admin);
+      const resent = invites.resend(first.id, admin);
+      await service.drain();
+      await webhooks.drain();
+      expect(bodies).toHaveLength(2);
+      const entries = audit.query({ action: "invite.created" }).entries;
+      expect(entries).toHaveLength(2);
+      for (const [index, invite] of [first, resent].entries()) {
+        const event = JSON.parse(bodies[index]).event;
+        expect(event).toEqual({
+          type: "invite.created", inviteId: invite.id, email: invite.email,
+          role: invite.role, expiresAt: invite.expiresAt,
+        });
+        expect(entries.find((e) => e.subjectId === invite.id)?.details).toEqual({
+          email: invite.email, role: invite.role, expiresAt: invite.expiresAt,
+        });
+        expect(JSON.stringify(bus.recent())).not.toContain(invite.token);
+        expect(mailer.sent[index].to).toBe(invite.email);
+        expect(mailer.sent[index].body).toContain(`/invites/${invite.token}/accept`);
+      }
+      // The privately delivered link still completes onboarding.
+      expect(invites.accept(resent.token, {}).key.role).toBe("viewer");
+    } finally {
+      audit.close();
+      webhooks.close();
+    }
   });
 
   it("ignores events without a template", async () => {

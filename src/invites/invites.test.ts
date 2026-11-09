@@ -66,12 +66,12 @@ describe("InviteService.create", () => {
     expect(invites.create({ email: "a@b.c" }, admin).role).toBe("member");
   });
 
-  it("publishes invite.created with the token so it can be emailed", () => {
+  it("publishes invite.created without the acceptance token", () => {
     const events: unknown[] = [];
     bus.subscribe("invite.created", (e) => events.push(e.event));
     const invite = invites.create({ email: "a@b.c" }, admin);
     expect(events).toEqual([
-      expect.objectContaining({ inviteId: invite.id, token: invite.token }),
+      { type: "invite.created", inviteId: invite.id, email: invite.email, role: invite.role, expiresAt: invite.expiresAt },
     ]);
   });
 
