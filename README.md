@@ -19,6 +19,14 @@ npm run dev      # start with hot reload on http://localhost:3000
 npm run build    # compile to dist/
 npm start        # run the compiled server
 npm test         # run the test suite
+npm run typecheck # type-check without emitting
+```
+
+Once the server is up, `GET /health` needs no API key, so it doubles as a
+quick smoke test:
+
+```bash
+curl http://localhost:3000/health   # {"status":"ok"}
 ```
 
 On first start the server prints a one-off admin key. Set `BOOKING_ADMIN_KEY`
