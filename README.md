@@ -322,6 +322,29 @@ Mail transport is chosen with `MAIL_TRANSPORT`: `sendmail` (local binary),
 `SMTP_PASSWORD`, `SMTP_FROM`) or unset for an in-memory sink used in
 development. Failed sends are retried every 30 seconds.
 
+### Utilization reports
+
+`GET /reports/utilization` summarizes how busy each resource was over a
+half-open window `[from, to)`: confirmed bookings, booked minutes (clipped to
+the window and capped at the resource's capacity), capacity minutes,
+utilization, and estimated revenue. The response is JSON by default; add
+`format` to get the same report in another shape:
+
+| `format` | Response                                                    |
+| -------- | ----------------------------------------------------------- |
+| (none)   | JSON report object                                          |
+| `csv`    | One row per resource plus a `TOTAL` row, CRLF line endings  |
+| `md`     | GitHub-flavored Markdown table, handy for PRs and Slack     |
+| `pdf`    | PDF download (`utilization.pdf`); needs pandoc on the host  |
+
+```bash
+curl "localhost:3000/reports/utilization?from=2026-08-01T00:00:00Z&to=2026-09-01T00:00:00Z&format=md" \
+  -H "authorization: Bearer $KEY"
+```
+
+The total row's utilization is capacity-weighted, so a large room that sat
+empty pulls the average down more than a small one.
+
 ### Import and export
 
 `POST /admin/import` accepts `{ "resources": [...], "bookings": [...] }` with
