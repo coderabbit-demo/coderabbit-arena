@@ -182,4 +182,10 @@ describe("formatCents", () => {
     expect(formatCents(-1250)).toBe("-$12.50");
     expect(formatCents(1250, "€")).toBe("€12.50");
   });
+
+  it("does not render a negative sign for amounts that round to zero", () => {
+    expect(formatCents(-0.4)).toBe("$0.00");
+    expect(formatCents(-0)).toBe("$0.00");
+    expect(formatCents(-0.6)).toBe("-$0.01");
+  });
 });
