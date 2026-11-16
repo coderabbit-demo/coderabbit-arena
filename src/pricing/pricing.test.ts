@@ -188,4 +188,11 @@ describe("formatCents", () => {
     expect(formatCents(-0)).toBe("$0.00");
     expect(formatCents(-0.6)).toBe("-$0.01");
   });
+
+  it("carries rounded cents into the dollar amount", () => {
+    expect(formatCents(99.6)).toBe("$1.00");
+    expect(formatCents(199.6)).toBe("$2.00");
+    expect(formatCents(-299.7)).toBe("-$3.00");
+    expect(formatCents(-0.5)).toBe("$0.00");
+  });
 });

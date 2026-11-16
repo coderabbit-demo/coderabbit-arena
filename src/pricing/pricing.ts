@@ -159,9 +159,10 @@ export function quote(input: QuoteInput): PriceBreakdown {
  * @returns The formatted currency amount.
  */
 export function formatCents(cents: Cents, symbol = "$"): string {
-  const sign = Math.round(cents) < 0 ? "-" : "";
-  const abs = Math.abs(cents);
+  const rounded = Math.round(cents);
+  const sign = rounded < 0 ? "-" : "";
+  const abs = Math.abs(rounded);
   const dollars = Math.floor(abs / 100);
-  const remainder = Math.round(abs % 100).toString().padStart(2, "0");
+  const remainder = (abs % 100).toString().padStart(2, "0");
   return `${sign}${symbol}${dollars}.${remainder}`;
 }
