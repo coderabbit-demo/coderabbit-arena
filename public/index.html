@@ -49,6 +49,11 @@
             <h2 id="bookings-title">Bookings</h2>
             <span class="muted" id="resource-capacity-label"></span>
           </div>
+          <div class="filter">
+            <label for="name-filter" class="visually-hidden">Filter by name</label>
+            <input id="name-filter" type="search" placeholder="Filter by name" autocomplete="off" />
+            <span class="muted" id="filter-count" aria-live="polite"></span>
+          </div>
 
           <p class="muted" id="pick-resource">Pick a resource to see its bookings.</p>
           <table id="booking-table" class="booking-table" hidden>
