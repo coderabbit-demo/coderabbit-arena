@@ -234,7 +234,24 @@ async function cancelBooking(id) {
   }
 }
 
+// --- booking form defaults ---------------------------------------------------------
+
+/** Most bookings are an hour, so suggest an end time one hour after the start. */
+function suggestEndTime() {
+  const start = $("booking-start").value;
+  if (!start) {
+    return;
+  }
+  const [hours, minutes] = start.split(":").map(Number);
+  if (hours >= 23) {
+    return;
+  }
+  $("booking-end").value = `${hours + 1}:${String(minutes).padStart(2, "0")}`;
+}
+
 // --- wiring --------------------------------------------------------------------
+
+$("booking-start").addEventListener("change", suggestEndTime);
 
 $("sign-in-form").addEventListener("submit", async (event) => {
   event.preventDefault();
