@@ -170,6 +170,10 @@ async function loadResources() {
   state.resources = await api("GET", "/resources");
   if (!selectedResource() && state.resources.length > 0) {
     state.selectedResourceId = state.resources[0].id;
+    if (!resourceFromUrl()) {
+      // Record the default so "back" can return to it.
+      history.replaceState(null, "", `#resource=${encodeURIComponent(state.selectedResourceId)}`);
+    }
   }
   renderResources();
 }
@@ -188,8 +192,34 @@ async function loadBookings() {
 
 async function selectResource(id) {
   state.selectedResourceId = id;
+  writeResourceToUrl(id);
   renderResources();
   await loadBookings();
+}
+
+// --- links -----------------------------------------------------------------------
+// The selected resource lives in the URL hash (#resource=<id>) so a view can be
+// bookmarked or shared, and the back button moves between resources.
+
+function resourceFromUrl() {
+  const params = new URLSearchParams(location.hash.slice(1));
+  return params.get("resource");
+}
+
+function writeResourceToUrl(id) {
+  const hash = `#resource=${encodeURIComponent(id)}`;
+  if (location.hash !== hash) {
+    history.pushState(null, "", hash);
+  }
+}
+
+/** Select the resource named in the URL, if it exists. */
+function applyResourceFromUrl() {
+  const id = resourceFromUrl();
+  if (id && state.resources.some((r) => r.id === id)) {
+    state.selectedResourceId = id;
+    renderResources();
+  }
 }
 
 async function signIn(apiKey) {
@@ -250,6 +280,15 @@ $("sign-in-form").addEventListener("submit", async (event) => {
 
 $("sign-out").addEventListener("click", signOut);
 
+window.addEventListener("popstate", async () => {
+  const id = resourceFromUrl();
+  if (state.actor && id && id !== state.selectedResourceId) {
+    state.selectedResourceId = id;
+    renderResources();
+    await loadBookings();
+  }
+});
+
 $("resource-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   $("resource-error").textContent = "";
@@ -260,6 +299,7 @@ $("resource-form").addEventListener("submit", async (event) => {
     });
     $("resource-form").reset();
     state.selectedResourceId = resource.id;
+    writeResourceToUrl(resource.id);
     await loadResources();
     await loadBookings();
   } catch (err) {
@@ -298,6 +338,7 @@ async function boot() {
   if (saved) {
     try {
       await signIn(saved);
+      applyResourceFromUrl();
       return;
     } catch {
       signOut();
