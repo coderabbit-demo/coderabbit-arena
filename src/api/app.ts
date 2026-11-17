@@ -270,6 +270,16 @@ export function createApp(deps: AppDependencies) {
     });
   }
 
+  app.get("/resources/:id/availability", requirePermission("bookings:read"), (req, res) => {
+    const date = queryString(req, "date");
+    if (!date) {
+      throw new ValidationError("date is required (YYYY-MM-DD)");
+    }
+    res.json(
+      service.availability(req.params.id, date, actorOf(req), queryNumber(req, "slotMinutes")),
+    );
+  });
+
   // --- bookings -------------------------------------------------------------
 
   app.post("/bookings", requirePermission("bookings:write"), (req, res) => {

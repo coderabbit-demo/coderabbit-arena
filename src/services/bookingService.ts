@@ -16,6 +16,7 @@ import { ReportInput, UtilizationReport } from "../reports/types";
 import { EventBus } from "../events/bus";
 import { Actor, ForbiddenError } from "../auth/types";
 import { actorCan, assertPermission, hasPermission } from "../auth/apiKeys";
+import { Availability, availabilityFor } from "./availability";
 
 /** Input for creating a whole series of bookings from a recurrence rule. */
 export interface CreateRecurringBookingInput extends CreateBookingInput {
@@ -128,6 +129,24 @@ export class BookingService {
   /** Look up a single resource, or undefined if it does not exist. */
   getResource(id: string): Resource | undefined {
     return this.store.getResource(id);
+  }
+
+  /**
+   * Free and taken slots for one resource on one day (UTC opening hours).
+   * Only counts are returned, so private bookings stay private.
+   */
+  availability(resourceId: string, date: string, actor: Actor, slotMinutes?: number): Availability {
+    assertPermission(actor, "bookings:read");
+    const resource = this.store.getResource(resourceId);
+    if (!resource) {
+      throw new NotFoundError(`Resource not found: ${resourceId}`);
+    }
+    return availabilityFor(
+      resource,
+      this.store.bookingsForResource(resourceId, true),
+      date,
+      slotMinutes,
+    );
   }
 
   /** Confirmed bookings for a resource, used by the public calendar feed. */
