@@ -5,6 +5,7 @@ import { RecurrenceError } from "../recurrence/types";
 import { ReportError } from "../reports/types";
 import { reportToCsv } from "../reports/csv";
 import { reportToMarkdown } from "../reports/markdown";
+import { reportToPdf } from "../reports/pdf";
 import { bookingsToIcs } from "../reports/ics";
 import { ApiKeyService } from "../auth/apiKeys";
 import { actorOf, authenticate, AuthenticatedRequest, requirePermission } from "../auth/middleware";
@@ -22,6 +23,8 @@ import { assertAnonymous, InviteError, InviteService } from "../invites/invites"
 import { ImportExportService } from "../importexport/importer";
 import { ImportError } from "../importexport/types";
 import { RateLimiter, RateLimitError } from "./rateLimit";
+import { SettingsService } from "../services/settings";
+import { ResourcePhotoService } from "../services/resourcePhotos";
 
 export interface AppDependencies {
   service: BookingService;
@@ -34,6 +37,8 @@ export interface AppDependencies {
   invites?: InviteService;
   importer?: ImportExportService;
   rateLimiter?: RateLimiter;
+  settings?: SettingsService;
+  resourcePhotos?: ResourcePhotoService;
   /** Browser origins allowed to call the API. Empty allows any origin. */
   allowedOrigins?: string[];
   /** Log every request line to stdout. */
@@ -125,6 +130,8 @@ export function createApp(deps: AppDependencies) {
     invites,
     importer,
     rateLimiter,
+    settings,
+    resourcePhotos,
   } = deps;
 
   const app = express();
@@ -273,7 +280,7 @@ export function createApp(deps: AppDependencies) {
         resourceId: queryString(req, "resourceId"),
         limit: queryNumber(req, "limit"),
         cursor: queryString(req, "cursor"),
-      }),
+      }, actorOf(req)),
     );
   });
 
@@ -407,52 +414,6 @@ export function createApp(deps: AppDependencies) {
     }
     res.json(report);
   }));
-
-  // --- import / export ------------------------------------------------------
-
-  if (importer) {
-    app.post("/admin/import", requirePermission("resources:write"), (req, res) => {
-      const result = importer.importPayload(
-        req.body ?? {},
-        { dryRun: queryBool(req, "dryRun"), continueOnError: !queryBool(req, "strict") },
-        actorOf(req),
-      );
-      res.status(result.errors.length > 0 ? 207 : 200).json(result);
-    });
-
-    app.post(
-      "/admin/import/url",
-      requirePermission("resources:write"),
-      wrap(async (req, res) => {
-        const result = await importer.importFromUrl(
-          req.body?.url,
-          { dryRun: queryBool(req, "dryRun"), continueOnError: !queryBool(req, "strict") },
-          actorOf(req),
-        );
-        res.status(result.errors.length > 0 ? 207 : 200).json(result);
-      }),
-    );
-
-    app.get("/admin/export", requirePermission("audit:read"), (req, res) => {
-      if (queryString(req, "format") === "csv") {
-        res.type("text/csv").send(importer.exportBookingsCsv(actorOf(req)));
-        return;
-      }
-      res.json(importer.exportAll(actorOf(req)));
-    });
-
-    app.post("/admin/export", requirePermission("audit:read"), (req, res) => {
-      res.status(201).json(importer.exportToFile(req.body?.name ?? "", actorOf(req)));
-    });
-
-    app.get("/admin/exports", requirePermission("audit:read"), (req, res) => {
-      res.json(importer.listExports(actorOf(req)));
-    });
-
-    app.get("/admin/exports/:name", requirePermission("audit:read"), (req, res) => {
-      res.type("application/json").send(importer.readExport(req.params.name, actorOf(req)));
-    });
-  }
 
   // --- import / export ------------------------------------------------------
 

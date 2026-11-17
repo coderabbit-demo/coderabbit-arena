@@ -15,7 +15,7 @@ import { buildUtilizationReport } from "../reports/reports";
 import { ReportInput, UtilizationReport } from "../reports/types";
 import { EventBus } from "../events/bus";
 import { Actor, ForbiddenError } from "../auth/types";
-import { actorCan, assertPermission } from "../auth/apiKeys";
+import { actorCan, assertPermission, hasPermission } from "../auth/apiKeys";
 
 /** Input for creating a whole series of bookings from a recurrence rule. */
 export interface CreateRecurringBookingInput extends CreateBookingInput {
@@ -324,13 +324,18 @@ export class BookingService {
    * offset so bookings created while a client is paging do not shift later
    * pages and cause duplicates or gaps.
    */
-  listBookingsPage(query: ListBookingsQuery = {}): BookingPage {
+  listBookingsPage(query: ListBookingsQuery = {}, actor?: Actor): BookingPage {
     const limit = query.limit ?? DEFAULT_PAGE_SIZE;
     if (!Number.isInteger(limit) || limit < 1 || limit > MAX_PAGE_SIZE) {
       throw new ValidationError(`limit must be an integer between 1 and ${MAX_PAGE_SIZE}`);
     }
     const after = query.cursor ? decodeCursor(query.cursor) : null;
-    const sorted = this.listBookings(query.resourceId)
+    const visible = actor
+      ? this.listBookings(actor, query.resourceId)
+      : query.resourceId
+        ? this.store.bookingsForResource(query.resourceId)
+        : this.store.listBookings();
+    const sorted = visible
       .filter((b) => !after || compareBookings(b, after) > 0)
       .sort(compareBookings);
 

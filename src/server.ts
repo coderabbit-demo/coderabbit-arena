@@ -11,6 +11,8 @@ import { NoteService } from "./notes/notes";
 import { createMailer } from "./notifications/mailer";
 import { NotificationService } from "./notifications/notifications";
 import { BookingService } from "./services/bookingService";
+import { ResourcePhotoService } from "./services/resourcePhotos";
+import { SettingsService } from "./services/settings";
 import { InMemoryStore } from "./store/store";
 import { WebhookService } from "./webhooks/dispatcher";
 
@@ -30,6 +32,8 @@ const attachments = new AttachmentService(config.attachmentsDir, store, bus, {
   maxBytes: config.maxAttachmentBytes,
 });
 const notes = new NoteService(store, bus);
+const settings = new SettingsService();
+const resourcePhotos = new ResourcePhotoService(store);
 const mailer = createMailer(config.smtp);
 const notifications = new NotificationService(store, bus, mailer, {
   publicBaseUrl: config.publicBaseUrl,
@@ -79,6 +83,8 @@ const app = createApp({
   invites,
   importer,
   rateLimiter,
+  settings,
+  resourcePhotos,
   allowedOrigins: config.allowedOrigins,
   requestLogging: process.env.REQUEST_LOGGING !== "false",
 });

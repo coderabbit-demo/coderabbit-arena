@@ -225,10 +225,17 @@ export class NotificationService {
     const event = envelope.event;
     const base = { actor: envelope.actor, occurredAt: envelope.occurredAt };
     switch (event.type) {
-      case "booking.created":
-      case "booking.cancelled": {
+      case "booking.created": {
         const resource = this.store.getResource(event.booking.resourceId);
         return { ...base, booking: event.booking, resource };
+      }
+      case "booking.cancelled": {
+        const booking = this.store.getBooking(event.bookingId);
+        if (!booking) {
+          return null;
+        }
+        const resource = this.store.getResource(event.resourceId);
+        return { ...base, booking, resource };
       }
       case "note.added": {
         const booking = this.store.getBooking(event.bookingId);
