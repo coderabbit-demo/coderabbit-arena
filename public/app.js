@@ -130,14 +130,15 @@ function renderResources() {
 const SORT_VALUES = {
   bookedBy: (booking) => booking.bookedBy.toLocaleLowerCase(),
   start: (booking) => new Date(booking.start).getTime(),
-  status: (booking) => booking.status,
+  status: (booking) => (booking.status === "confirmed" ? 0 : 1),
 };
 
 function compareBookings(a, b) {
   const value = SORT_VALUES[state.sort.key];
   const x = value(a);
   const y = value(b);
-  return state.sort.dir === "asc" ? x > y : y > x;
+  const order = x < y ? -1 : x > y ? 1 : 0;
+  return state.sort.dir === "asc" ? order : -order;
 }
 
 function sortedBookings() {
