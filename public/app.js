@@ -3,6 +3,7 @@
 "use strict";
 
 const KEY_STORAGE = "bookings.apiKey";
+const THEME_STORAGE = "bookings.theme";
 
 const state = {
   apiKey: null,
@@ -234,7 +235,38 @@ async function cancelBooking(id) {
   }
 }
 
+// --- theme ---------------------------------------------------------------------
+
+function currentTheme() {
+  const explicit = document.documentElement.dataset.theme;
+  if (explicit === "dark" || explicit === "light") {
+    return explicit;
+  }
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function renderThemeToggle() {
+  const dark = currentTheme() === "dark";
+  const toggle = $("theme-toggle");
+  toggle.setAttribute("aria-pressed", String(dark));
+  toggle.textContent = dark ? "Light mode" : "Dark mode";
+}
+
+function toggleTheme() {
+  const next = currentTheme() === "dark" ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  try {
+    localStorage.setItem(THEME_STORAGE, next);
+  } catch {
+    // Storage can be unavailable; the choice then lasts for this page only.
+  }
+  renderThemeToggle();
+}
+
 // --- wiring --------------------------------------------------------------------
+
+$("theme-toggle").addEventListener("click", toggleTheme);
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", renderThemeToggle);
 
 $("sign-in-form").addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -288,6 +320,7 @@ $("booking-form").addEventListener("submit", async (event) => {
 });
 
 async function boot() {
+  renderThemeToggle();
   $("booking-date").value = todayLocal();
   let saved = null;
   try {

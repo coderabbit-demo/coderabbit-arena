@@ -4,11 +4,23 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Room Bookings</title>
+    <script>
+      // Apply the saved theme before first paint so the page doesn't flash.
+      try {
+        var saved = localStorage.getItem("bookings.theme");
+        if (saved === "dark" || saved === "light") {
+          document.documentElement.dataset.theme = saved;
+        }
+      } catch (e) {}
+    </script>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <header class="topbar">
       <h1 class="brand">Room Bookings</h1>
+      <button type="button" id="theme-toggle" class="theme-toggle" aria-pressed="false">
+        Dark mode
+      </button>
       <div class="session" id="session" hidden>
         <span id="whoami" class="whoami"></span>
         <button type="button" id="sign-out" class="link">Sign out</button>
