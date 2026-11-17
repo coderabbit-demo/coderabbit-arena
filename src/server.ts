@@ -12,6 +12,7 @@ import { InviteService } from "./invites/invites";
 import { NoteService } from "./notes/notes";
 import { createMailer } from "./notifications/mailer";
 import { NotificationService } from "./notifications/notifications";
+import { SlackNotifier } from "./notifications/slack";
 import { BookingService } from "./services/bookingService";
 import { ResourcePhotoService } from "./services/resourcePhotos";
 import { SettingsService } from "./services/settings";
@@ -78,6 +79,15 @@ if (process.env.BOOKING_DEMO_DATA === "true") {
   seedDemoData(service, admin);
 }
 
+// Created after the demo seed so start-up doesn't post every seeded booking.
+const slack = new SlackNotifier(store, bus, {
+  webhookUrl: process.env.SLACK_WEBHOOK_URL,
+  onError: (err) => {
+    // eslint-disable-next-line no-console
+    console.error(`slack alert failed: ${String(err)}`);
+  },
+});
+
 const app = createApp({
   service,
   apiKeys,
@@ -91,6 +101,7 @@ const app = createApp({
   rateLimiter,
   settings,
   resourcePhotos,
+  slack,
   allowedOrigins: config.allowedOrigins,
   requestLogging: process.env.REQUEST_LOGGING !== "false",
 });

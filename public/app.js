@@ -49,6 +49,9 @@ function can(permission) {
   if (permission === "resources:write") {
     return role === "admin";
   }
+  if (permission === "webhooks:manage") {
+    return role === "admin" || role === "service";
+  }
   if (permission === "bookings:write") {
     return role === "admin" || role === "member" || role === "service";
   }
@@ -104,6 +107,7 @@ function renderSession() {
   if (signedIn) {
     $("whoami").textContent = `${state.actor.name} · ${state.actor.role}`;
     $("resource-form").hidden = !can("resources:write");
+    $("slack-card").hidden = !can("webhooks:manage");
   }
 }
 
@@ -164,7 +168,37 @@ function renderBookings() {
   $("no-bookings").hidden = state.bookings.length > 0;
 }
 
+function renderSlack(configured) {
+  $("slack-status").textContent = configured
+    ? "Connected. New bookings are posted to your Slack channel."
+    : "Not connected. Set SLACK_WEBHOOK_URL on the server to post new bookings to Slack.";
+  $("slack-status").className = configured ? "slack-status connected" : "slack-status muted";
+  $("slack-test").hidden = !configured;
+}
+
 // --- actions -------------------------------------------------------------------
+
+async function loadSlack() {
+  if (!can("webhooks:manage")) {
+    return;
+  }
+  $("slack-result").textContent = "";
+  const { configured } = await api("GET", "/integrations/slack");
+  renderSlack(configured);
+}
+
+async function sendSlackTest() {
+  $("slack-result").textContent = "Sending…";
+  $("slack-result").className = "muted";
+  try {
+    await api("POST", "/integrations/slack/test");
+    $("slack-result").textContent = "Test message sent. Check the channel.";
+    $("slack-result").className = "notice";
+  } catch (err) {
+    $("slack-result").textContent = err.message;
+    $("slack-result").className = "error";
+  }
+}
 
 async function loadResources() {
   state.resources = await api("GET", "/resources");
@@ -209,6 +243,7 @@ async function signIn(apiKey) {
   renderSession();
   await loadResources();
   await loadBookings();
+  await loadSlack();
 }
 
 function signOut() {
@@ -249,6 +284,7 @@ $("sign-in-form").addEventListener("submit", async (event) => {
 });
 
 $("sign-out").addEventListener("click", signOut);
+$("slack-test").addEventListener("click", sendSlackTest);
 
 $("resource-form").addEventListener("submit", async (event) => {
   event.preventDefault();

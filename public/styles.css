@@ -140,6 +140,27 @@ button.danger {
   border: 1px solid var(--border);
 }
 
+.integration {
+  margin-top: 20px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+.slack-status {
+  margin: 0;
+  font-size: 13px;
+}
+
+.slack-status.connected {
+  color: var(--ok);
+}
+
+.notice {
+  margin: 8px 0 0;
+  color: var(--ok);
+  font-size: 13px;
+}
+
 .muted {
   color: var(--muted);
   font-size: 14px;
