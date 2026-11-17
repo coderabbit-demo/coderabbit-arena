@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Room Bookings</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <h1 class="brand">Room Bookings</h1>
+      <div class="session" id="session" hidden>
+        <span id="whoami" class="whoami"></span>
+        <button type="button" id="sign-out" class="link">Sign out</button>
+      </div>
+    </header>
+
+    <main>
+      <section id="sign-in" class="card sign-in" hidden>
+        <h2>Sign in</h2>
+        <p class="muted">Paste an API key. It is kept in this browser tab only.</p>
+        <form id="sign-in-form">
+          <label for="api-key">API key</label>
+          <input id="api-key" name="apiKey" type="password" autocomplete="off" placeholder="bk_..." required />
+          <button type="submit">Sign in</button>
+          <p class="error" id="sign-in-error" role="alert"></p>
+        </form>
+      </section>
+
+      <section id="dashboard" class="layout" hidden>
+        <aside class="card resources">
+          <h2>Resources</h2>
+          <ul id="resource-list" class="resource-list" aria-label="Resources"></ul>
+          <p class="muted" id="no-resources" hidden>No resources yet.</p>
+
+          <form id="resource-form" class="stack" hidden>
+            <h3>Add resource</h3>
+            <label for="resource-name">Name</label>
+            <input id="resource-name" name="name" required />
+            <label for="resource-capacity">Capacity</label>
+            <input id="resource-capacity" name="capacity" type="number" min="1" value="1" required />
+            <button type="submit">Add resource</button>
+            <p class="error" id="resource-error" role="alert"></p>
+          </form>
+        </aside>
+
+        <section class="card bookings">
+          <div class="bookings-header">
+            <h2 id="bookings-title">Bookings</h2>
+            <span class="muted" id="resource-capacity-label"></span>
+          </div>
+
+          <p class="muted" id="pick-resource">Pick a resource to see its bookings.</p>
+          <table id="booking-table" class="booking-table" hidden>
+            <thead>
+              <tr>
+                <th scope="col">Booked by</th>
+                <th scope="col">When</th>
+                <th scope="col">Status</th>
+                <th scope="col"><span class="visually-hidden">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody id="booking-rows"></tbody>
+          </table>
+          <p class="muted" id="no-bookings" hidden>No bookings for this resource.</p>
+
+          <form id="booking-form" class="booking-form" hidden>
+            <h3>New booking</h3>
+            <div class="grid">
+              <div>
+                <label for="booked-by">Booked by</label>
+                <input id="booked-by" name="bookedBy" required />
+              </div>
+              <div>
+                <label for="booking-date">Date</label>
+                <input id="booking-date" name="date" type="date" required />
+              </div>
+              <div>
+                <label for="booking-start">Start</label>
+                <input id="booking-start" name="start" type="time" step="900" required />
+              </div>
+              <div>
+                <label for="booking-end">End</label>
+                <input id="booking-end" name="end" type="time" step="900" required />
+              </div>
+            </div>
+            <label class="checkbox">
+              <input id="booking-private" name="private" type="checkbox" />
+              Private (only you and admins see it)
+            </label>
+            <button type="submit">Book</button>
+            <p class="error" id="booking-error" role="alert"></p>
+          </form>
+        </section>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>

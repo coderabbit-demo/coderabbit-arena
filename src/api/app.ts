@@ -1,3 +1,4 @@
+import path from "path";
 import express, { NextFunction, Request, RequestHandler, Response } from "express";
 import { BookingService, ConflictError, NotFoundError } from "../services/bookingService";
 import { ValidationError } from "../domain/time";
@@ -118,6 +119,9 @@ function wrap(
   };
 }
 
+/** The dashboard's static files; resolves the same from src/api and dist/api. */
+const PUBLIC_DIR = path.join(__dirname, "..", "..", "public");
+
 export function createApp(deps: AppDependencies) {
   const {
     service,
@@ -147,6 +151,14 @@ export function createApp(deps: AppDependencies) {
   // Liveness is unauthenticated.
   app.get("/health", (_req, res) => {
     res.json({ status: "ok" });
+  });
+
+  // --- dashboard ------------------------------------------------------------
+  // Static files only; every API call the page makes still sends an API key.
+
+  app.use("/app", express.static(PUBLIC_DIR));
+  app.get("/", (_req, res) => {
+    res.redirect("/app/");
   });
 
   // --- public: invites & file links ----------------------------------------
