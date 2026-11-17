@@ -75,6 +75,16 @@ function toIso(date, time) {
   return new Date(`${date}T${time}`).toISOString();
 }
 
+const WEEK_MS = 7 * 24 * 60 * 1000;
+
+/** The same slot one week later, as ISO strings. */
+function nextWeek(booking) {
+  return {
+    start: new Date(new Date(booking.start).getTime() + WEEK_MS).toISOString(),
+    end: new Date(new Date(booking.end).getTime() + WEEK_MS).toISOString(),
+  };
+}
+
 function todayLocal() {
   const now = new Date();
   const pad = (n) => String(n).padStart(2, "0");
@@ -152,9 +162,15 @@ function renderBookings() {
     ]);
     const actions = el("td");
     if (booking.status === "confirmed" && can("bookings:write")) {
+      const again = el("button", {
+        type: "button",
+        className: "secondary",
+        textContent: "Book again next week",
+      });
+      again.addEventListener("click", () => bookAgain(booking));
       const cancel = el("button", { type: "button", className: "danger", textContent: "Cancel" });
       cancel.addEventListener("click", () => cancelBooking(booking.id));
-      actions.append(cancel);
+      actions.append(again, cancel);
     }
     const row = el("tr", {}, [who, el("td", { textContent: formatWhen(booking) }), status, actions]);
     row.dataset.bookingId = booking.id;
@@ -223,6 +239,24 @@ function signOut() {
   state.bookings = [];
   state.selectedResourceId = null;
   renderSession();
+}
+
+async function bookAgain(booking) {
+  $("booking-error").textContent = "";
+  $("booking-notice").textContent = "";
+  try {
+    const created = await api("POST", "/bookings", {
+      resourceId: booking.resourceId,
+      bookedBy: booking.bookedBy,
+      private: booking.private,
+      ...nextWeek(booking),
+    });
+    $("booking-notice").textContent = `Booked ${created.bookedBy} again for ${formatWhen(created)}.`;
+    await loadBookings();
+  } catch (err) {
+    $("booking-error").textContent =
+      err.status === 409 ? "That slot next week is already taken." : err.message;
+  }
 }
 
 async function cancelBooking(id) {
