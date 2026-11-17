@@ -88,6 +88,13 @@ describe("authentication", () => {
     expect(res.json).toEqual({ status: "ok" });
   });
 
+  it("serves the dashboard page without a key", async () => {
+    const res = await call("GET", "/app/");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/html");
+    expect(res.text).toContain("Room Bookings");
+  });
+
   it("rejects requests without a token", async () => {
     const res = await call("GET", "/resources");
     expect(res.status).toBe(401);

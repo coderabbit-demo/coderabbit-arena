@@ -41,6 +41,24 @@ PDF reports (`format=pdf`) are rendered with [pandoc](https://pandoc.org), so
 install it on the host (`brew install pandoc` / `apt-get install pandoc`) along
 with a LaTeX engine.
 
+## Dashboard
+
+The server also hosts a small web dashboard at
+[http://localhost:3000/app/](http://localhost:3000/app/) (`/` redirects there).
+Sign in with any API key to pick a resource, see its bookings, book a slot or
+cancel one. Admin keys can also add resources. The page is plain HTML, CSS and
+JavaScript in `public/`, with no build step, and it calls the same API
+documented below.
+
+To get something to click through right away, start the server with demo data:
+
+```bash
+BOOKING_DEMO_DATA=true BOOKING_ADMIN_KEY=bk_change_me_to_something_long npm run dev
+```
+
+That creates three resources and about twenty bookings around today. Sign in
+with the `BOOKING_ADMIN_KEY` value.
+
 ## Authentication
 
 Every route except `GET /health` requires an API key. Send it as a bearer
@@ -357,6 +375,7 @@ restrict browser origins; when unset any origin may call the API.
 | `RATE_LIMIT_PER_MINUTE` | `600` | Per-client request budget |
 | `ALLOWED_ORIGINS` | any | Comma-separated browser origins |
 | `REQUEST_LOGGING` | `true` | One JSON line per request on stdout |
+| `BOOKING_DEMO_DATA` | `false` | Seed demo resources and bookings at start-up |
 
 ## Design notes
 

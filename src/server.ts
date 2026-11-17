@@ -3,7 +3,9 @@ import { RateLimiter } from "./api/rateLimit";
 import { AttachmentService } from "./attachments/attachments";
 import { AuditLog } from "./audit/audit";
 import { ApiKeyService } from "./auth/apiKeys";
+import { Actor } from "./auth/types";
 import { loadConfig } from "./config";
+import { seedDemoData } from "./demo/seed";
 import { EventBus } from "./events/bus";
 import { ImportExportService } from "./importexport/importer";
 import { InviteService } from "./invites/invites";
@@ -11,6 +13,8 @@ import { NoteService } from "./notes/notes";
 import { createMailer } from "./notifications/mailer";
 import { NotificationService } from "./notifications/notifications";
 import { BookingService } from "./services/bookingService";
+import { ResourcePhotoService } from "./services/resourcePhotos";
+import { SettingsService } from "./services/settings";
 import { InMemoryStore } from "./store/store";
 import { WebhookService } from "./webhooks/dispatcher";
 
@@ -30,6 +34,8 @@ const attachments = new AttachmentService(config.attachmentsDir, store, bus, {
   maxBytes: config.maxAttachmentBytes,
 });
 const notes = new NoteService(store, bus);
+const settings = new SettingsService();
+const resourcePhotos = new ResourcePhotoService(store);
 const mailer = createMailer(config.smtp);
 const notifications = new NotificationService(store, bus, mailer, {
   publicBaseUrl: config.publicBaseUrl,
@@ -52,11 +58,11 @@ const rateLimiter = new RateLimiter({
  * Seed the initial admin key. In production set BOOKING_ADMIN_KEY to a secret
  * you manage; during local development one is generated and printed once.
  */
-function bootstrapAdmin(): void {
+function bootstrapAdmin(): Actor {
   const configured = process.env.BOOKING_ADMIN_KEY;
   if (configured) {
-    apiKeys.seed(configured, { name: "bootstrap admin", role: "admin" });
-    return;
+    const key = apiKeys.seed(configured, { name: "bootstrap admin", role: "admin" });
+    return { keyId: key.id, name: key.name, role: key.role };
   }
   const issued = apiKeys.issue({ name: "bootstrap admin", role: "admin" }, null);
   // eslint-disable-next-line no-console
@@ -64,9 +70,13 @@ function bootstrapAdmin(): void {
     `No BOOKING_ADMIN_KEY set. Generated a one-off admin key:\n  ${issued.secret}\n` +
       "Set BOOKING_ADMIN_KEY to make it stable across restarts.",
   );
+  return { keyId: issued.key.id, name: issued.key.name, role: issued.key.role };
 }
 
-bootstrapAdmin();
+const admin = bootstrapAdmin();
+if (process.env.BOOKING_DEMO_DATA === "true") {
+  seedDemoData(service, admin);
+}
 
 const app = createApp({
   service,
@@ -79,6 +89,8 @@ const app = createApp({
   invites,
   importer,
   rateLimiter,
+  settings,
+  resourcePhotos,
   allowedOrigins: config.allowedOrigins,
   requestLogging: process.env.REQUEST_LOGGING !== "false",
 });
