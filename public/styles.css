@@ -203,6 +203,24 @@ button.danger {
   font-weight: 500;
 }
 
+button.sort {
+  margin: 0;
+  padding: 0;
+  font-weight: inherit;
+  color: inherit;
+  background: none;
+}
+
+button.sort:hover {
+  color: var(--text);
+}
+
+.sort-arrow {
+  display: inline-block;
+  width: 1em;
+  font-size: 10px;
+}
+
 .status {
   display: inline-block;
   padding: 2px 8px;

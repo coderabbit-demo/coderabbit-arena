@@ -10,6 +10,8 @@ const state = {
   resources: [],
   selectedResourceId: null,
   bookings: [],
+  // Column the booking list is sorted by, and which way.
+  sort: { key: "start", dir: "asc" },
 };
 
 const $ = (id) => document.getElementById(id);
@@ -125,6 +127,48 @@ function renderResources() {
   $("no-resources").hidden = state.resources.length > 0;
 }
 
+const SORT_VALUES = {
+  bookedBy: (booking) => booking.bookedBy.toLocaleLowerCase(),
+  start: (booking) => new Date(booking.start).getTime(),
+  status: (booking) => booking.status,
+};
+
+function compareBookings(a, b) {
+  const value = SORT_VALUES[state.sort.key];
+  const x = value(a);
+  const y = value(b);
+  return state.sort.dir === "asc" ? x > y : y > x;
+}
+
+function sortedBookings() {
+  return [...state.bookings].sort(compareBookings);
+}
+
+function renderSortHeaders() {
+  for (const button of document.querySelectorAll("[data-sort]")) {
+    const th = button.closest("th");
+    const active = button.dataset.sort === state.sort.key;
+    th.setAttribute(
+      "aria-sort",
+      active ? (state.sort.dir === "asc" ? "ascending" : "descending") : "none",
+    );
+    button.querySelector(".sort-arrow").textContent = active
+      ? state.sort.dir === "asc"
+        ? "▲"
+        : "▼"
+      : "";
+  }
+}
+
+function setSort(key) {
+  if (state.sort.key === key) {
+    state.sort.dir = state.sort.dir === "asc" ? "desc" : "asc";
+  } else {
+    state.sort = { key, dir: "asc" };
+  }
+  renderBookings();
+}
+
 function renderBookings() {
   const resource = selectedResource();
   $("pick-resource").hidden = Boolean(resource);
@@ -142,7 +186,8 @@ function renderBookings() {
     return;
   }
 
-  for (const booking of state.bookings) {
+  renderSortHeaders();
+  for (const booking of sortedBookings()) {
     const who = el("td", {}, [el("span", { textContent: booking.bookedBy })]);
     if (booking.private) {
       who.append(el("span", { className: "private-tag", textContent: "private" }));
@@ -249,6 +294,10 @@ $("sign-in-form").addEventListener("submit", async (event) => {
 });
 
 $("sign-out").addEventListener("click", signOut);
+
+for (const button of document.querySelectorAll("[data-sort]")) {
+  button.addEventListener("click", () => setSort(button.dataset.sort));
+}
 
 $("resource-form").addEventListener("submit", async (event) => {
   event.preventDefault();

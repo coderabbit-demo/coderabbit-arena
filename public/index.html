@@ -54,9 +54,15 @@
           <table id="booking-table" class="booking-table" hidden>
             <thead>
               <tr>
-                <th scope="col">Booked by</th>
-                <th scope="col">When</th>
-                <th scope="col">Status</th>
+                <th scope="col">
+                  <button type="button" class="sort" data-sort="bookedBy">Booked by <span class="sort-arrow" aria-hidden="true"></span></button>
+                </th>
+                <th scope="col">
+                  <button type="button" class="sort" data-sort="start">When <span class="sort-arrow" aria-hidden="true"></span></button>
+                </th>
+                <th scope="col">
+                  <button type="button" class="sort" data-sort="status">Status <span class="sort-arrow" aria-hidden="true"></span></button>
+                </th>
                 <th scope="col"><span class="visually-hidden">Actions</span></th>
               </tr>
             </thead>
