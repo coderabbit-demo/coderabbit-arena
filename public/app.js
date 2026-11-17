@@ -70,6 +70,17 @@ function formatWhen(booking) {
   return `${dateFormat.format(start)}, ${timeFormat.format(start)} – ${timeFormat.format(end)}`;
 }
 
+/** Length of a booking as "45m", "1h" or "2h 30m". */
+function formatDuration(booking) {
+  const minutes = Math.round((new Date(booking.end) - new Date(booking.start)) / 60000);
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (hours === 0) {
+    return `${rest}m`;
+  }
+  return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`;
+}
+
 /** Combine a local date ("2026-11-17") and time ("09:30") into an ISO string. */
 function toIso(date, time) {
   return new Date(`${date}T${time}`).toISOString();
@@ -156,7 +167,13 @@ function renderBookings() {
       cancel.addEventListener("click", () => cancelBooking(booking.id));
       actions.append(cancel);
     }
-    const row = el("tr", {}, [who, el("td", { textContent: formatWhen(booking) }), status, actions]);
+    const row = el("tr", {}, [
+      who,
+      el("td", { textContent: formatWhen(booking) }),
+      el("td", { className: "duration", textContent: formatDuration(booking) }),
+      status,
+      actions,
+    ]);
     row.dataset.bookingId = booking.id;
     rows.append(row);
   }
