@@ -225,10 +225,51 @@ function signOut() {
   renderSession();
 }
 
+let toastTimer = null;
+
+/** Show a short confirmation in the corner; it hides itself after a few seconds. */
+function showToast(message) {
+  const toast = $("toast");
+  toast.textContent = message;
+  toast.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    toast.hidden = true;
+  }, 4000);
+}
+
+/** Ask before cancelling; resolves true only if the user confirms. */
+function confirmCancel(booking) {
+  const dialog = $("cancel-dialog");
+  const form = dialog.querySelector("form");
+  $("cancel-dialog-details").textContent = `${booking.bookedBy}, ${formatWhen(booking)}`;
+  return new Promise((resolve) => {
+    // Resolve from the button press itself rather than the dialog's "close"
+    // event, which browsers deliver asynchronously.
+    const onSubmit = (event) => {
+      finish(Boolean(event.submitter) && event.submitter.value === "cancel");
+    };
+    const onDismiss = () => finish(false);
+    function finish(confirmed) {
+      form.removeEventListener("submit", onSubmit);
+      dialog.removeEventListener("cancel", onDismiss);
+      resolve(confirmed);
+    }
+    form.addEventListener("submit", onSubmit);
+    dialog.addEventListener("cancel", onDismiss);
+    dialog.showModal();
+  });
+}
+
 async function cancelBooking(id) {
+  const booking = state.bookings.find((b) => b.id === id);
+  if (!booking || !(await confirmCancel(booking))) {
+    return;
+  }
   try {
     await api("DELETE", `/bookings/${encodeURIComponent(id)}`);
     await loadBookings();
+    showToast(`Cancelled ${booking.bookedBy}'s booking.`);
   } catch (err) {
     $("booking-error").textContent = err.message;
   }
@@ -272,7 +313,7 @@ $("booking-form").addEventListener("submit", async (event) => {
   $("booking-error").textContent = "";
   const date = $("booking-date").value;
   try {
-    await api("POST", "/bookings", {
+    const booking = await api("POST", "/bookings", {
       resourceId: state.selectedResourceId,
       bookedBy: $("booked-by").value.trim(),
       start: toIso(date, $("booking-start").value),
@@ -282,6 +323,7 @@ $("booking-form").addEventListener("submit", async (event) => {
     $("booking-form").reset();
     $("booking-date").value = todayLocal();
     await loadBookings();
+    showToast(`Booked for ${booking.bookedBy}: ${formatWhen(booking)}.`);
   } catch (err) {
     $("booking-error").textContent = err.message;
   }

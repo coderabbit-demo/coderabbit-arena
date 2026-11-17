@@ -95,6 +95,20 @@
       </section>
     </main>
 
+    <dialog id="cancel-dialog" class="card dialog" aria-labelledby="cancel-dialog-title">
+      <form method="dialog">
+        <h2 id="cancel-dialog-title">Cancel this booking?</h2>
+        <p id="cancel-dialog-details"></p>
+        <p class="muted">The slot becomes free for others. This can't be undone.</p>
+        <div class="dialog-actions">
+          <button type="submit" value="keep" class="secondary">Keep booking</button>
+          <button type="submit" value="cancel" class="destructive">Cancel booking</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
     <script src="app.js"></script>
   </body>
 </html>
