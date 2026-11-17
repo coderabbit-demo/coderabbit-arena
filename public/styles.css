@@ -185,6 +185,15 @@ button.danger {
   justify-content: space-between;
 }
 
+.checkbox.toolbar {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.checkbox[hidden] {
+  display: none;
+}
+
 .booking-table {
   width: 100%;
   border-collapse: collapse;

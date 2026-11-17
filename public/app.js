@@ -10,6 +10,8 @@ const state = {
   resources: [],
   selectedResourceId: null,
   bookings: [],
+  /** Hide bookings that have already ended. */
+  hidePast: false,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -133,6 +135,8 @@ function renderBookings() {
     ? `Capacity ${resource.capacity}`
     : "";
   $("booking-form").hidden = !resource || !can("bookings:write");
+  $("hide-past").closest("label").hidden = !resource;
+  $("hide-past").checked = state.hidePast;
 
   const rows = $("booking-rows");
   rows.replaceChildren();
@@ -142,7 +146,12 @@ function renderBookings() {
     return;
   }
 
-  for (const booking of state.bookings) {
+  const now = Date.now();
+  const visible = state.hidePast
+    ? state.bookings.filter((b) => new Date(b.end).getTime() > now)
+    : state.bookings;
+
+  for (const booking of visible) {
     const who = el("td", {}, [el("span", { textContent: booking.bookedBy })]);
     if (booking.private) {
       who.append(el("span", { className: "private-tag", textContent: "private" }));
@@ -160,8 +169,10 @@ function renderBookings() {
     row.dataset.bookingId = booking.id;
     rows.append(row);
   }
-  $("booking-table").hidden = state.bookings.length === 0;
-  $("no-bookings").hidden = state.bookings.length > 0;
+  $("booking-table").hidden = visible.length === 0;
+  $("no-bookings").hidden = visible.length > 0;
+  $("no-bookings").textContent =
+    state.bookings.length > 0 ? "No upcoming bookings." : "No bookings for this resource.";
 }
 
 // --- actions -------------------------------------------------------------------
@@ -249,6 +260,11 @@ $("sign-in-form").addEventListener("submit", async (event) => {
 });
 
 $("sign-out").addEventListener("click", signOut);
+
+$("hide-past").addEventListener("change", (event) => {
+  state.hidePast = event.target.checked;
+  renderBookings();
+});
 
 $("resource-form").addEventListener("submit", async (event) => {
   event.preventDefault();
