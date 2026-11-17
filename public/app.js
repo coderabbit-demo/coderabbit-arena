@@ -125,6 +125,34 @@ function renderResources() {
   $("no-resources").hidden = state.resources.length > 0;
 }
 
+/** Counts and the next booking for the summary line above the table. */
+function summarize(bookings, now = new Date()) {
+  const upcoming = bookings
+    .filter((b) => b.status === "confirmed" && new Date(b.start) > now)
+    .sort((a, b) => new Date(a.start) - new Date(b.start));
+  return {
+    next: upcoming[0] || null,
+    upcoming: upcoming.length,
+    cancelled: bookings.filter((b) => b.status === "cancelled").length,
+  };
+}
+
+function renderSummary() {
+  const summary = summarize(state.bookings);
+  const parts = [];
+  if (summary.next) {
+    const start = new Date(summary.next.start);
+    parts.push(`Next: ${summary.next.bookedBy}, ${dateFormat.format(start)} at ${timeFormat.format(start)}`);
+  } else {
+    parts.push("Nothing coming up");
+  }
+  parts.push(`${summary.upcoming} upcoming`);
+  if (summary.cancelled > 0) {
+    parts.push(`${summary.cancelled} cancelled`);
+  }
+  $("booking-summary").textContent = parts.join(" · ");
+}
+
 function renderBookings() {
   const resource = selectedResource();
   $("pick-resource").hidden = Boolean(resource);
@@ -136,11 +164,13 @@ function renderBookings() {
 
   const rows = $("booking-rows");
   rows.replaceChildren();
+  $("booking-summary").hidden = !resource;
   if (!resource) {
     $("booking-table").hidden = true;
     $("no-bookings").hidden = true;
     return;
   }
+  renderSummary();
 
   for (const booking of state.bookings) {
     const who = el("td", {}, [el("span", { textContent: booking.bookedBy })]);
