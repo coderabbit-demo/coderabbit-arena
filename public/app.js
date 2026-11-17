@@ -76,9 +76,29 @@ function toIso(date, time) {
 }
 
 function todayLocal() {
-  const now = new Date();
+  return localDateKey(new Date());
+}
+
+/** "2026-11-17" for a Date, in the browser's time zone. */
+function localDateKey(date) {
   const pad = (n) => String(n).padStart(2, "0");
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+/** "now" while a booking is running, "today" if it starts later today, else null. */
+function whenTag(booking, now = new Date()) {
+  const start = new Date(booking.start);
+  const end = new Date(booking.end);
+  if (booking.status !== "confirmed") {
+    return null;
+  }
+  if (start <= now && now < end) {
+    return "now";
+  }
+  if (localDateKey(start) === localDateKey(now) && start > now) {
+    return "today";
+  }
+  return null;
 }
 
 // --- rendering -----------------------------------------------------------------
@@ -156,7 +176,14 @@ function renderBookings() {
       cancel.addEventListener("click", () => cancelBooking(booking.id));
       actions.append(cancel);
     }
-    const row = el("tr", {}, [who, el("td", { textContent: formatWhen(booking) }), status, actions]);
+    const when = el("td", {}, [el("span", { textContent: formatWhen(booking) })]);
+    const tag = whenTag(booking);
+    if (tag) {
+      when.append(
+        el("span", { className: `when-tag ${tag}`, textContent: tag === "now" ? "Now" : "Today" }),
+      );
+    }
+    const row = el("tr", {}, [who, when, status, actions]);
     row.dataset.bookingId = booking.id;
     rows.append(row);
   }

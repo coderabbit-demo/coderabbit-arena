@@ -226,6 +226,25 @@ button.danger {
   color: var(--muted);
 }
 
+.when-tag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 999px;
+}
+
+.when-tag.today {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.when-tag.now {
+  color: var(--accent-text);
+  background: var(--ok);
+}
+
 .booking-form {
   margin-top: 16px;
   padding-top: 4px;
