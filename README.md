@@ -134,6 +134,7 @@ curl -X POST localhost:3000/auth/keys/$KEY_ID/rotate -H "authorization: Bearer $
 | GET    | `/resources`     | List resources                               |
 | PUT    | `/resources/:id/photo` | Set a resource photo from a URL (`{url}`) |
 | GET    | `/resources/:id/photo` | Fetch the stored resource photo          |
+| GET    | `/resources/:id/availability` | Free slots for a day (`?date=YYYY-MM-DD`) |
 | POST   | `/bookings`      | Create a booking (rejects conflicts)         |
 | POST   | `/bookings/recurring` | Create a recurring booking series       |
 | GET    | `/bookings`      | List bookings, paginated (`?resourceId=`, `limit`, `cursor`) |
@@ -260,6 +261,23 @@ are paging do not cause duplicates or gaps.
 ```bash
 curl "localhost:3000/bookings?resourceId=<id>&limit=100" -H "authorization: Bearer $KEY"
 ```
+
+### Availability
+
+`GET /resources/:id/availability?date=2026-11-18` splits the day's opening
+hours (08:00–18:00 UTC) into slots and says how many more bookings each one
+can take. `slotMinutes` may be 15, 30 (the default) or 60. Only counts are
+returned, so private bookings don't leak names.
+
+```json
+{ "resourceId": "...", "date": "2026-11-18", "timeZone": "UTC", "slotMinutes": 30,
+  "slots": [ { "start": "2026-11-18T08:00:00.000Z", "end": "2026-11-18T08:30:00.000Z",
+               "available": true, "remaining": 1 } ] }
+```
+
+A slot is taken once the resource is at capacity for any part of it. Like
+bookings, slots are half-open, so a booking that ends at 10:00 leaves the
+10:00 slot free.
 
 ### Recurring bookings
 
