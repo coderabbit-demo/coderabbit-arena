@@ -140,6 +140,21 @@ button.danger {
   border: 1px solid var(--border);
 }
 
+button.secondary {
+  margin: 0 8px 0 0;
+  padding: 4px 10px;
+  color: var(--accent);
+  background: none;
+  border: 1px solid var(--border);
+}
+
+.notice {
+  min-height: 1em;
+  margin: 8px 0 0;
+  color: var(--ok);
+  font-size: 13px;
+}
+
 .muted {
   color: var(--muted);
   font-size: 14px;
@@ -196,6 +211,11 @@ button.danger {
   padding: 8px;
   text-align: left;
   border-bottom: 1px solid var(--border);
+}
+
+.booking-table td:last-child {
+  white-space: nowrap;
+  text-align: right;
 }
 
 .booking-table th {
