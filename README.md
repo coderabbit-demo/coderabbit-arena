@@ -59,6 +59,9 @@ BOOKING_DEMO_DATA=true BOOKING_ADMIN_KEY=bk_change_me_to_something_long npm run 
 That creates three resources and about twenty bookings around today. Sign in
 with the `BOOKING_ADMIN_KEY` value.
 
+For how the page is put together and how to add to it, see the
+[dashboard guide](docs/dashboard.md).
+
 ## Authentication
 
 Every route except `GET /health` requires an API key. Send it as a bearer
