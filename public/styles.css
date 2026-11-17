@@ -226,6 +226,18 @@ button.danger {
   color: var(--muted);
 }
 
+.load-more {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+button.secondary {
+  color: var(--accent);
+  background: none;
+  border: 1px solid var(--border);
+}
+
 .booking-form {
   margin-top: 16px;
   padding-top: 4px;

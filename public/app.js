@@ -3,6 +3,8 @@
 "use strict";
 
 const KEY_STORAGE = "bookings.apiKey";
+/** Bookings fetched per page; long-running rooms can have hundreds. */
+const PAGE_SIZE = 10;
 
 const state = {
   apiKey: null,
@@ -10,6 +12,8 @@ const state = {
   resources: [],
   selectedResourceId: null,
   bookings: [],
+  /** Cursor for the next page of bookings, or null when there are no more. */
+  nextCursor: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -162,6 +166,11 @@ function renderBookings() {
   }
   $("booking-table").hidden = state.bookings.length === 0;
   $("no-bookings").hidden = state.bookings.length > 0;
+  $("load-more").hidden = !state.nextCursor;
+  $("booking-count").textContent =
+    state.bookings.length > 0
+      ? `Showing ${state.bookings.length}${state.nextCursor ? "" : " (all)"}`
+      : "";
 }
 
 // --- actions -------------------------------------------------------------------
@@ -177,12 +186,29 @@ async function loadResources() {
 async function loadBookings() {
   if (!state.selectedResourceId) {
     state.bookings = [];
+    state.nextCursor = null;
     renderBookings();
     return;
   }
-  const params = new URLSearchParams({ resourceId: state.selectedResourceId, limit: "200" });
+  const params = new URLSearchParams({
+    resourceId: state.selectedResourceId,
+    limit: String(PAGE_SIZE),
+  });
   const page = await api("GET", `/bookings?${params}`);
   state.bookings = page.data;
+  state.nextCursor = page.nextCursor;
+  renderBookings();
+}
+
+/** Append the next page of bookings for the selected resource. */
+async function loadMoreBookings() {
+  if (!state.nextCursor) {
+    return;
+  }
+  const params = new URLSearchParams({ limit: String(PAGE_SIZE), cursor: state.nextCursor });
+  const page = await api("GET", `/bookings?${params}`);
+  state.bookings = state.bookings.concat(page.data);
+  state.nextCursor = page.nextCursor;
   renderBookings();
 }
 
@@ -221,6 +247,7 @@ function signOut() {
   state.actor = null;
   state.resources = [];
   state.bookings = [];
+  state.nextCursor = null;
   state.selectedResourceId = null;
   renderSession();
 }
@@ -249,6 +276,17 @@ $("sign-in-form").addEventListener("submit", async (event) => {
 });
 
 $("sign-out").addEventListener("click", signOut);
+
+$("load-more").addEventListener("click", async () => {
+  $("load-more").disabled = true;
+  try {
+    await loadMoreBookings();
+  } catch (err) {
+    $("booking-error").textContent = err.message;
+  } finally {
+    $("load-more").disabled = false;
+  }
+});
 
 $("resource-form").addEventListener("submit", async (event) => {
   event.preventDefault();
