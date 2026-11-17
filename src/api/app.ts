@@ -20,6 +20,7 @@ import { AttachmentError } from "../attachments/types";
 import { NoteService } from "../notes/notes";
 import { NotificationService } from "../notifications/notifications";
 import { TemplateError } from "../notifications/templates";
+import { SlackError, SlackNotifier } from "../notifications/slack";
 import { assertAnonymous, InviteError, InviteService } from "../invites/invites";
 import { ImportExportService } from "../importexport/importer";
 import { ImportError } from "../importexport/types";
@@ -40,6 +41,7 @@ export interface AppDependencies {
   rateLimiter?: RateLimiter;
   settings?: SettingsService;
   resourcePhotos?: ResourcePhotoService;
+  slack?: SlackNotifier;
   /** Browser origins allowed to call the API. Empty allows any origin. */
   allowedOrigins?: string[];
   /** Log every request line to stdout. */
@@ -136,6 +138,7 @@ export function createApp(deps: AppDependencies) {
     rateLimiter,
     settings,
     resourcePhotos,
+    slack,
   } = deps;
 
   const app = express();
@@ -517,6 +520,23 @@ export function createApp(deps: AppDependencies) {
     },
   );
 
+  // --- integrations ---------------------------------------------------------
+
+  if (slack) {
+    app.get("/integrations/slack", requirePermission("webhooks:manage"), (_req, res) => {
+      res.json({ configured: slack.configured });
+    });
+
+    app.post(
+      "/integrations/slack/test",
+      requirePermission("webhooks:manage"),
+      wrap(async (_req, res) => {
+        await slack.sendTest();
+        res.json({ sent: true });
+      }),
+    );
+  }
+
   app.use(errorHandler);
 
   return app;
@@ -538,7 +558,7 @@ function errorHandler(
   if (err instanceof RateLimitError) {
     return res.status(429).json({ error: err.message, retryAfter: err.retryAfterSeconds });
   }
-  if (err instanceof AttachmentError || err instanceof InviteError) {
+  if (err instanceof AttachmentError || err instanceof InviteError || err instanceof SlackError) {
     return res.status(err.status).json({ error: err.message });
   }
   if (

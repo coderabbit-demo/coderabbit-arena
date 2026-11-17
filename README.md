@@ -376,6 +376,7 @@ restrict browser origins; when unset any origin may call the API.
 | `ALLOWED_ORIGINS` | any | Comma-separated browser origins |
 | `REQUEST_LOGGING` | `true` | One JSON line per request on stdout |
 | `BOOKING_DEMO_DATA` | `false` | Seed demo resources and bookings at start-up |
+| `SLACK_WEBHOOK_URL` | unset | Slack incoming webhook; new bookings are posted to its channel |
 
 ## Design notes
 

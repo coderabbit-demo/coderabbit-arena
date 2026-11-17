@@ -42,6 +42,13 @@
             <button type="submit">Add resource</button>
             <p class="error" id="resource-error" role="alert"></p>
           </form>
+
+          <section id="slack-card" class="integration" hidden>
+            <h3>Slack alerts</h3>
+            <p id="slack-status" class="slack-status muted"></p>
+            <button type="button" id="slack-test" hidden>Send test message</button>
+            <p id="slack-result" class="muted" role="status"></p>
+          </section>
         </aside>
 
         <section class="card bookings">
