@@ -185,6 +185,17 @@ button.danger {
   justify-content: space-between;
 }
 
+.filter {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.filter input {
+  max-width: 260px;
+}
+
 .booking-table {
   width: 100%;
   border-collapse: collapse;

@@ -234,7 +234,27 @@ async function cancelBooking(id) {
   }
 }
 
+// --- filtering -------------------------------------------------------------------
+
+/** Show only booking rows whose booker name contains the filter text. */
+function applyNameFilter() {
+  const query = $("name-filter").value.trim().toLowerCase();
+  const rows = $("booking-rows").querySelectorAll("tr");
+  let shown = 0;
+  for (const row of rows) {
+    const name = row.querySelector("td span").textContent.toLowerCase();
+    const match = !query || name.includes(query);
+    row.hidden = !match;
+    if (match) {
+      shown += 1;
+    }
+  }
+  $("filter-count").textContent = query ? `${shown} of ${rows.length}` : "";
+}
+
 // --- wiring --------------------------------------------------------------------
+
+$("name-filter").addEventListener("input", applyNameFilter);
 
 $("sign-in-form").addEventListener("submit", async (event) => {
   event.preventDefault();
