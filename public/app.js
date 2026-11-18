@@ -156,7 +156,12 @@ function renderBookings() {
       cancel.addEventListener("click", () => cancelBooking(booking.id));
       actions.append(cancel);
     }
-    const row = el("tr", {}, [who, el("td", { textContent: formatWhen(booking) }), status, actions]);
+    const when = el("td", { textContent: formatWhen(booking) });
+    // Labels head each value when the table is shown as cards on phones.
+    who.dataset.label = "Booked by";
+    when.dataset.label = "When";
+    status.dataset.label = "Status";
+    const row = el("tr", {}, [who, when, status, actions]);
     row.dataset.bookingId = booking.id;
     rows.append(row);
   }

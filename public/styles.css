@@ -255,3 +255,63 @@ button.danger {
     grid-template-columns: 1fr 1fr;
   }
 }
+
+/* Phones: stack the header, and show each booking as a card. */
+@media (max-width: 600px) {
+  .topbar {
+    flex-wrap: wrap;
+    padding: 12px 16px;
+  }
+
+  main {
+    margin: 16px auto;
+  }
+
+  .card {
+    padding: 16px;
+  }
+
+  .booking-table thead {
+    display: none;
+  }
+
+  .booking-table,
+  .booking-table tbody,
+  .booking-table tr,
+  .booking-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .booking-table tr {
+    margin-bottom: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+
+  .booking-table td {
+    padding: 4px 0;
+    border-bottom: 0;
+  }
+
+  .booking-table td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  /* Cells without a label are spacing cells in the table view. */
+  .booking-table td:not([data-label]) {
+    display: none;
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  button[type="submit"] {
+    width: 100%;
+  }
+}
