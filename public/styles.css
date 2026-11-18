@@ -102,6 +102,21 @@ input {
   border-radius: 6px;
 }
 
+input[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+.hint {
+  min-height: 1em;
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.hint.invalid {
+  color: var(--danger);
+}
+
 input[type="checkbox"] {
   width: auto;
 }
