@@ -92,6 +92,19 @@ function el(tag, props = {}, children = []) {
   return node;
 }
 
+/** True for bookings made with the signed-in key. */
+function isMine(booking) {
+  return Boolean(state.actor) && booking.createdBy === state.actor.id;
+}
+
+/** Members may cancel only their own bookings; admins and services any. */
+function canCancel(booking) {
+  if (booking.status !== "confirmed" || !can("bookings:write")) {
+    return false;
+  }
+  return state.actor.role === "admin" || state.actor.role === "service" || isMine(booking);
+}
+
 function selectedResource() {
   return state.resources.find((r) => r.id === state.selectedResourceId) || null;
 }
@@ -147,11 +160,14 @@ function renderBookings() {
     if (booking.private) {
       who.append(el("span", { className: "private-tag", textContent: "private" }));
     }
+    if (isMine(booking)) {
+      who.append(el("span", { className: "mine-tag", textContent: "you" }));
+    }
     const status = el("td", {}, [
       el("span", { className: `status ${booking.status}`, textContent: booking.status }),
     ]);
     const actions = el("td");
-    if (booking.status === "confirmed" && can("bookings:write")) {
+    if (canCancel(booking)) {
       const cancel = el("button", { type: "button", className: "danger", textContent: "Cancel" });
       cancel.addEventListener("click", () => cancelBooking(booking.id));
       actions.append(cancel);
