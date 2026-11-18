@@ -81,6 +81,63 @@ function todayLocal() {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
+// --- validation ----------------------------------------------------------------
+
+/**
+ * Check the new-booking form before it is sent. Returns the first problem as
+ * { field, message }, or null with the booking's length in minutes.
+ */
+function checkBookingForm(now = new Date()) {
+  const date = $("booking-date").value;
+  const startTime = $("booking-start").value;
+  const endTime = $("booking-end").value;
+  if (!date || !startTime || !endTime) {
+    return { problem: null, minutes: null };
+  }
+  const start = new Date(`${date}T${startTime}`);
+  const end = new Date(`${date}T${endTime}`);
+  if (end <= start) {
+    return {
+      problem: { field: "booking-end", message: "End time must be after the start time." },
+      minutes: null,
+    };
+  }
+  if (start < now) {
+    return {
+      problem: { field: "booking-start", message: "That start time has already passed." },
+      minutes: null,
+    };
+  }
+  return { problem: null, minutes: Math.round((end - start) / 60000) };
+}
+
+function formatMinutes(minutes) {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h === 0) {
+    return `${m}m`;
+  }
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
+
+/** Show the form's problem (or the booking length) under the inputs. */
+function renderBookingCheck() {
+  const { problem, minutes } = checkBookingForm();
+  for (const id of ["booking-start", "booking-end"]) {
+    $(id).removeAttribute("aria-invalid");
+  }
+  const hint = $("booking-hint");
+  if (problem) {
+    $(problem.field).setAttribute("aria-invalid", "true");
+    hint.textContent = problem.message;
+    hint.className = "hint invalid";
+  } else {
+    hint.textContent = minutes ? `${formatMinutes(minutes)} booking` : "";
+    hint.className = "hint";
+  }
+  return problem;
+}
+
 // --- rendering -----------------------------------------------------------------
 
 function el(tag, props = {}, children = []) {
@@ -270,6 +327,11 @@ $("resource-form").addEventListener("submit", async (event) => {
 $("booking-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   $("booking-error").textContent = "";
+  const problem = renderBookingCheck();
+  if (problem) {
+    $(problem.field).focus();
+    return;
+  }
   const date = $("booking-date").value;
   try {
     await api("POST", "/bookings", {
@@ -281,11 +343,16 @@ $("booking-form").addEventListener("submit", async (event) => {
     });
     $("booking-form").reset();
     $("booking-date").value = todayLocal();
+    renderBookingCheck();
     await loadBookings();
   } catch (err) {
     $("booking-error").textContent = err.message;
   }
 });
+
+for (const id of ["booking-date", "booking-start", "booking-end"]) {
+  $(id).addEventListener("change", renderBookingCheck);
+}
 
 async function boot() {
   $("booking-date").value = todayLocal();
